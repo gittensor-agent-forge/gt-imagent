@@ -18,3 +18,11 @@ agent improvements.
 
 The workflow uses `pull_request`, not `pull_request_target`, and does not expose
 repository secrets to candidate code.
+
+Trusted live API benchmarks are handled by separate workflows:
+
+- `.github/workflows/benchmark-api-pr.yml`
+- `.github/workflows/benchmark-api-main.yml`
+
+These workflows use the protected `benchmark-api` environment and skip execution
+when required API secrets are not configured.

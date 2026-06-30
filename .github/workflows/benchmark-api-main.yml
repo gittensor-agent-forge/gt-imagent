@@ -1,0 +1,91 @@
+name: Benchmark API Main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: benchmark-api-main
+  cancel-in-progress: false
+
+jobs:
+  benchmark-api:
+    runs-on: ubuntu-latest
+    environment: benchmark-api
+
+    env:
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      DASHSCOPE_WORKSPACE_ID: ${{ secrets.DASHSCOPE_WORKSPACE_ID }}
+      DASHSCOPE_ENDPOINT: ${{ secrets.DASHSCOPE_ENDPOINT }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Check API secrets
+        id: api_secrets
+        run: |
+          if [ -n "$DASHSCOPE_API_KEY" ] && [ -n "$OPENAI_API_KEY" ] && { [ -n "$DASHSCOPE_WORKSPACE_ID" ] || [ -n "$DASHSCOPE_ENDPOINT" ]; }; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "API benchmark secrets are not fully configured; skipping trusted API benchmark."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.api_secrets.outputs.available == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install benchmark
+        if: steps.api_secrets.outputs.available == 'true'
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run trusted API benchmark
+        if: steps.api_secrets.outputs.available == 'true'
+        run: |
+          python -m imagent_bench.config validate configs/api-gate.yaml
+          python -m imagent_bench.runner \
+            --config configs/api-gate.yaml \
+            --agent agents/qwen_baseline \
+            --output results/api-main
+
+      - name: Promote API result to baseline history
+        if: steps.api_secrets.outputs.available == 'true'
+        run: |
+          python -m imagent_bench.promote_baseline \
+            --result results/api-main/results.json \
+            --baseline-dir baselines/qwen_baseline/ia_bench_v1_api \
+            --commit-sha "${GITHUB_SHA}"
+
+      - name: Commit promoted API baseline
+        if: steps.api_secrets.outputs.available == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add baselines/qwen_baseline/ia_bench_v1_api
+          if git diff --cached --quiet; then
+            echo "No API baseline changes to commit."
+          else
+            git commit -m "chore: update api benchmark baseline [skip ci]"
+            git push
+          fi
+
+      - name: Upload API main benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-api-main-${{ github.sha }}
+          path: results/api-main/
+          retention-days: 90

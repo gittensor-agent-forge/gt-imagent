@@ -1,0 +1,128 @@
+name: Benchmark API PR
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-api-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark-api:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    environment: benchmark-api
+
+    env:
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      DASHSCOPE_WORKSPACE_ID: ${{ secrets.DASHSCOPE_WORKSPACE_ID }}
+      DASHSCOPE_ENDPOINT: ${{ secrets.DASHSCOPE_ENDPOINT }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+
+      - name: Check API secrets
+        id: api_secrets
+        run: |
+          if [ -n "$DASHSCOPE_API_KEY" ] && [ -n "$OPENAI_API_KEY" ] && { [ -n "$DASHSCOPE_WORKSPACE_ID" ] || [ -n "$DASHSCOPE_ENDPOINT" ]; }; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "API benchmark secrets are not fully configured; skipping trusted API benchmark."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect agent changes
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p results
+          gh api \
+            repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files \
+            --paginate \
+            --jq '.[].filename' > results/api-changed-files.txt
+          if grep -q '^agents/qwen_baseline/' results/api-changed-files.txt; then
+            echo "enforce_improvement=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enforce_improvement=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.api_secrets.outputs.available == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install benchmark from base
+        if: steps.api_secrets.outputs.available == 'true'
+        working-directory: base
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev]"
+
+      - name: Validate API gate config
+        if: steps.api_secrets.outputs.available == 'true'
+        working-directory: base
+        run: python -m imagent_bench.config validate configs/api-gate.yaml
+
+      - name: Run API baseline from base
+        if: steps.api_secrets.outputs.available == 'true'
+        working-directory: base
+        run: |
+          python -m imagent_bench.runner \
+            --config configs/api-gate.yaml \
+            --agent agents/qwen_baseline \
+            --output ../results/api-base
+
+      - name: Run API candidate from PR
+        if: steps.api_secrets.outputs.available == 'true'
+        working-directory: base
+        run: |
+          python -m imagent_bench.runner \
+            --config configs/api-gate.yaml \
+            --agent ../head/agents/qwen_baseline \
+            --output ../results/api-pr
+
+      - name: Compare API candidate against baseline
+        if: steps.api_secrets.outputs.available == 'true' && steps.changes.outputs.enforce_improvement == 'true'
+        working-directory: base
+        run: |
+          python -m imagent_bench.compare \
+            --config configs/api-gate.yaml \
+            --baseline ../results/api-base/results.json \
+            --candidate ../results/api-pr/results.json \
+            --output ../results/api-comparison.json
+
+      - name: Skip API improvement gate for non-agent changes
+        if: steps.api_secrets.outputs.available == 'true' && steps.changes.outputs.enforce_improvement != 'true'
+        run: |
+          {
+            echo "# API Benchmark Comparison"
+            echo
+            echo "The trusted API benchmark ran for this PR, but the improvement gate was not enforced because no Qwen baseline agent files changed."
+          } > results/api-comparison.md
+
+      - name: Upload API benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-api-pr-${{ github.event.pull_request.number }}
+          path: results/
+          retention-days: 30

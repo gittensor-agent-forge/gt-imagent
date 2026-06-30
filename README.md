@@ -65,3 +65,6 @@ python -m imagent_bench.promote_baseline \
   --result results/api-main/results.json \
   --baseline-dir baselines/qwen_baseline/ia_bench_v1_api
 ```
+
+See `docs/api_benchmark.md` for the trusted Qwen Image and GPT-5.5 benchmark
+workflow setup.
