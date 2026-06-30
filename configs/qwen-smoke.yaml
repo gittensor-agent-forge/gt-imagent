@@ -1,0 +1,23 @@
+suite:
+  id: ia_bench_v1
+  tasks: [plan, reason, search, memory, feedback]
+  max_cases: 6
+
+runtime:
+  seeds: [1001]
+  deterministic: true
+  timeout_seconds_per_case: 60
+  max_feedback_rounds: 1
+
+agent:
+  qwen_image:
+    mode: mock
+
+metrics:
+  primary: ia_score
+  ia_weights:
+    plan: 0.25
+    reason: 0.25
+    search: 0.25
+    memory: 0.15
+    feedback: 0.10

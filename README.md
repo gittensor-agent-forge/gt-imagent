@@ -17,3 +17,19 @@ python -m imagent_bench.runner \
 
 The smoke suite writes normalized JSON results, per-case traces, image artifacts,
 and a Markdown summary under the selected output directory.
+
+## Qwen Baseline
+
+The repository includes a Qwen-style baseline agent with a deterministic mock
+mode for local testing:
+
+```bash
+python -m imagent_bench.runner \
+  --config configs/qwen-smoke.yaml \
+  --agent agents/qwen_baseline \
+  --output results/qwen-smoke
+```
+
+Live Qwen Image generation is configured through `agent.qwen_image.mode: live`
+and requires `DASHSCOPE_API_KEY` plus either `DASHSCOPE_WORKSPACE_ID` or
+`DASHSCOPE_ENDPOINT`.
