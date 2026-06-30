@@ -1,0 +1,4 @@
+id: echo-agent
+name: Echo Agent
+entrypoint: echo_agent.agent:EchoAgent
+version: 0.1.0

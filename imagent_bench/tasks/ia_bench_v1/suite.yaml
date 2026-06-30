@@ -1,0 +1,9 @@
+id: ia_bench_v1
+version: 1
+description: Minimal IA-style benchmark suite for image-agent runner validation.
+tasks:
+  plan: cases/plan.jsonl
+  reason: cases/reason.jsonl
+  search: cases/search.jsonl
+  memory: cases/memory.jsonl
+  feedback: cases/feedback.jsonl

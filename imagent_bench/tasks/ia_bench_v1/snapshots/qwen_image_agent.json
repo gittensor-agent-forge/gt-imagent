@@ -1,0 +1,9 @@
+{
+  "source": "frozen-snapshot",
+  "title": "Qwen-Image-Agent",
+  "facts": [
+    "Qwen-Image-Agent frames real-world image generation as a context gap problem.",
+    "The agent grounds missing context through planning, reasoning, search, memory, and feedback.",
+    "IA-Bench evaluates image agents across plan, reason, search, and memory capabilities."
+  ]
+}

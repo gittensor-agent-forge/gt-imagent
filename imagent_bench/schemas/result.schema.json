@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "agent", "suite", "config", "runtime", "metrics", "cases"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "agent": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "version": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "suite": {
+      "type": "object",
+      "required": ["id", "version", "hash"],
+      "properties": {
+        "id": {"type": "string"},
+        "version": {},
+        "hash": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "config": {"type": "object"},
+    "runtime": {"type": "object"},
+    "metrics": {
+      "type": "object",
+      "required": [
+        "total_cases",
+        "completed_cases",
+        "checklist_accuracy",
+        "pass_rate",
+        "ia_score",
+        "context_gap_score",
+        "trace_validity",
+        "latency_ms"
+      ],
+      "additionalProperties": true
+    },
+    "cases": {"type": "array"}
+  },
+  "additionalProperties": true
+}
