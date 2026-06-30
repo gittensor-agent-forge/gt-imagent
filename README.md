@@ -33,3 +33,15 @@ python -m imagent_bench.runner \
 Live Qwen Image generation is configured through `agent.qwen_image.mode: live`
 and requires `DASHSCOPE_API_KEY` plus either `DASHSCOPE_WORKSPACE_ID` or
 `DASHSCOPE_ENDPOINT`.
+
+## Result Comparison
+
+Benchmark results can be compared with configurable acceptance rules:
+
+```bash
+python -m imagent_bench.compare \
+  --config configs/pr-gate.yaml \
+  --baseline results/base/results.json \
+  --candidate results/pr/results.json \
+  --output results/comparison.json
+```

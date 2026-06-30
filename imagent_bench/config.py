@@ -79,6 +79,15 @@ def validate_config(config: dict[str, Any], config_path: str | Path) -> list[str
         suite_path = resolve_suite_path(config, config_path)
         if not suite_path.exists():
             errors.append(f"suite file does not exist: {suite_path}")
+
+    rules = config.get("acceptance", {}).get("rules", [])
+    if rules and not isinstance(rules, list):
+        errors.append("acceptance.rules must be a list")
+    for index, rule in enumerate(rules if isinstance(rules, list) else []):
+        if "metric" not in rule:
+            errors.append(f"acceptance.rules[{index}].metric is required")
+        if rule.get("mode") not in {"higher_is_better", "lower_is_better"}:
+            errors.append(f"acceptance.rules[{index}].mode must be higher_is_better or lower_is_better")
     return errors
 
 
