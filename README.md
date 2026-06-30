@@ -57,3 +57,11 @@ Pull requests are evaluated by the offline benchmark workflow in
 the PR base branch, runs the base Qwen baseline and PR Qwen candidate, then
 compares the results with `configs/pr-gate.yaml` when the Qwen baseline agent
 changes.
+
+Clean main-branch benchmark results can be promoted into baseline history with:
+
+```bash
+python -m imagent_bench.promote_baseline \
+  --result results/api-main/results.json \
+  --baseline-dir baselines/qwen_baseline/ia_bench_v1_api
+```
