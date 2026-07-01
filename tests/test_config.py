@@ -10,8 +10,8 @@ def test_local_smoke_config_is_valid() -> None:
     assert validate_config(load_yaml(path), path) == []
 
 
-def test_api_gate_openrouter_config_is_valid() -> None:
-    path = Path("configs/api-gate-openrouter.yaml")
+def test_api_gate_config_is_valid() -> None:
+    path = Path("configs/api-gate.yaml")
     assert validate_config(load_yaml(path), path) == []
 
 

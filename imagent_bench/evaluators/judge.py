@@ -296,56 +296,13 @@ class _ApiImageJudge:
         return 0.0
 
 
-class OpenAIImageJudge(_ApiImageJudge):
-    """Image judge backed by the OpenAI Responses API."""
-
-    provider = "openai"
-    default_model = "gpt-5.5"
-    default_api_key_env = "OPENAI_API_KEY"
-    default_endpoint = "https://api.openai.com/v1/responses"
-
-    def _request_payload(self, prompt: str, image_path: Path) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": prompt},
-                        {
-                            "type": "input_image",
-                            "image_url": _image_data_url(image_path),
-                            "detail": self.detail,
-                        },
-                    ],
-                }
-            ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "image_agent_judgment",
-                    "strict": True,
-                    "schema": _JUDGMENT_SCHEMA,
-                }
-            },
-        }
-        if self.config.get("max_output_tokens"):
-            payload["max_output_tokens"] = int(self.config["max_output_tokens"])
-        if self.config.get("reasoning_effort"):
-            payload["reasoning"] = {"effort": str(self.config["reasoning_effort"])}
-        return payload
-
-    def _extract_verdict_text(self, response: dict[str, Any]) -> str:
-        return _extract_response_text(response)
-
-
 class OpenRouterImageJudge(_ApiImageJudge):
     """Image judge backed by the OpenRouter Chat Completions API.
 
-    OpenRouter is OpenAI Chat Completions compatible, so image input uses the
-    ``image_url`` content part and structured output uses ``response_format`` with a
-    JSON schema. ``provider.require_parameters`` makes OpenRouter route only to
-    providers that honor the schema instead of returning free-form text.
+    OpenRouter is Chat Completions compatible, so image input uses the ``image_url``
+    content part and structured output uses ``response_format`` with a JSON schema.
+    ``provider.require_parameters`` makes OpenRouter route only to providers that
+    honor the schema instead of returning free-form text.
     """
 
     provider = "openrouter"
@@ -412,8 +369,6 @@ def build_image_judge(config: dict[str, Any], output_dir: Path):
     provider = str(judge_config.get("provider", "mock_text"))
     if provider == "mock_text":
         return MockTextJudge(config, output_dir)
-    if provider == "openai":
-        return OpenAIImageJudge(config, output_dir)
     if provider == "openrouter":
         return OpenRouterImageJudge(config, output_dir)
     raise ValueError(f"Unknown image judge provider: {provider}")
@@ -436,23 +391,6 @@ def _file_sha256(path: Path) -> str:
 def _stable_sha256(data: Any) -> str:
     encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _extract_response_text(response: dict[str, Any]) -> str:
-    if isinstance(response.get("output_text"), str):
-        return response["output_text"]
-    texts: list[str] = []
-    for item in response.get("output", []):
-        if not isinstance(item, dict):
-            continue
-        for content in item.get("content", []):
-            if isinstance(content, dict) and content.get("type") in {"output_text", "text"}:
-                text = content.get("text")
-                if isinstance(text, str):
-                    texts.append(text)
-    if texts:
-        return "\n".join(texts)
-    raise JudgeError("OpenAI response did not contain output text")
 
 
 def _extract_message_content(response: dict[str, Any]) -> str:

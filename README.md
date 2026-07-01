@@ -53,18 +53,17 @@ Live generation is configured through `agent.openrouter_image.mode: live` and
 requires `OPENROUTER_API_KEY`. It calls OpenRouter's image API and records the
 gateway-reported spend as `cost_usd`.
 
-Trusted API benchmark runs can use GPT-5.5 as an image judge through
-`configs/api-gate.yaml`. This mode requires `OPENAI_API_KEY` in addition to the
-Qwen Image credentials.
+Trusted API benchmark runs use the OpenRouter image judge configured in
+`configs/api-gate.yaml`. This mode requires `OPENROUTER_API_KEY` in addition to
+the Qwen Image credentials.
 
 The offline smoke and PR gate configs use the deterministic `mock_text` image
 judge by default. That provider inspects generated file text for stable contract
 testing; it is not a real visual-quality or semantic image assessment.
 
-The image judge can also run through the OpenRouter Chat Completions API by setting
-`evaluation.image_judge.provider: openrouter` (default model `openai/gpt-4o`). This
-mode reads `OPENROUTER_API_KEY` and reaches many vision-capable models through a
-single credential.
+The image judge runs through the OpenRouter Chat Completions API (default model
+`openai/gpt-4o`). This mode reads `OPENROUTER_API_KEY` and reaches many
+vision-capable models through a single credential.
 
 ## Result Comparison
 
@@ -94,5 +93,5 @@ python -m imagent_bench.promote_baseline \
   --baseline-dir baselines/qwen_baseline/ia_bench_v1_api
 ```
 
-See `docs/api_benchmark.md` for the trusted Qwen Image and GPT-5.5 benchmark
+See `docs/api_benchmark.md` for the trusted Qwen Image and OpenRouter benchmark
 workflow setup.

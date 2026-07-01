@@ -1,20 +1,18 @@
 # API Benchmark
 
 The trusted API benchmark runs the Qwen baseline agent in live Qwen Image mode
-and evaluates generated images with the OpenAI image judge configured in
+and evaluates generated images with the OpenRouter image judge configured in
 `configs/api-gate.yaml`.
 
-The image judge provider is configurable. `configs/api-gate.yaml` uses the OpenAI
-judge and reads `OPENAI_API_KEY`. To judge through OpenRouter instead, use the
-ready-made `configs/api-gate-openrouter.yaml` (or set
-`evaluation.image_judge.provider: openrouter`) and provide `OPENROUTER_API_KEY`;
-OpenRouter exposes many vision models through one Chat Completions endpoint.
+The image judge uses the OpenRouter Chat Completions API and reads
+`OPENROUTER_API_KEY`. OpenRouter exposes many vision models through one
+endpoint; `configs/api-gate.yaml` defaults to `openai/gpt-4o`.
 
 Configure the `benchmark-api` GitHub Environment with:
 
 ```text
 DASHSCOPE_API_KEY
-OPENAI_API_KEY
+OPENROUTER_API_KEY
 ```
 
 and one of:
