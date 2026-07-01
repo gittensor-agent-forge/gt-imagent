@@ -1,0 +1,39 @@
+name: Agent improvement
+description: Propose or claim an improvement to an image agent
+labels: ["agent-improvement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Improvements should raise the benchmark's `ia_score` without regressing other
+        metrics. Comment on the issue to claim it before you start. See
+        [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md).
+  - type: input
+    id: area
+    attributes:
+      label: Capability or area
+      description: Which capability or component does this target?
+      placeholder: plan | reason | search | memory | feedback | judge | agent | harness
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What is missing or underperforming today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What change would improve the benchmark, and roughly which files?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected benchmark impact
+      description: Which metric(s) should improve (for example ia_score or pass_rate)?
+    validations:
+      required: false
