@@ -125,11 +125,12 @@ class OpenRouterBaselineAgent:
         if "reason" not in case.get("allowed_tools", []):
             return []
         prompt = case["prompt"]
-        match = re.search(r"(\d+)\s*\+\s*(\d+)", prompt)
+        match = re.search(r"(\d+)\s*([+*])\s*(\d+)", prompt)
         if not match:
             return [{"type": "reasoning", "input": prompt, "result": "no arithmetic expression found"}]
-        left, right = int(match.group(1)), int(match.group(2))
-        return [{"type": "arithmetic", "expression": f"{left} + {right}", "result": str(left + right)}]
+        left, operator, right = int(match.group(1)), match.group(2), int(match.group(3))
+        result = left + right if operator == "+" else left * right
+        return [{"type": "arithmetic", "expression": f"{left} {operator} {right}", "result": str(result)}]
 
     def _search(self, case: dict[str, Any]) -> list[dict[str, Any]]:
         if "search" not in case.get("allowed_tools", []):
