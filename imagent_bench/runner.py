@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import shutil
@@ -105,18 +106,20 @@ def _public_case(case: dict[str, Any], seed: int, run_id: str, output_dir: Path)
 
 def _relative_output(output: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     normalized = dict(output)
+    output_root = output_dir.resolve()
     for key in ("image_path", "trace_path", "log_path"):
         value = normalized.get(key)
         if not value:
             continue
+        if not isinstance(value, (str, os.PathLike)):
+            raise TypeError(f"{key} must be a filesystem path")
         path = Path(value)
-        if path.is_absolute():
-            try:
-                normalized[key] = str(path.relative_to(output_dir))
-            except ValueError:
-                normalized[key] = str(path)
-        else:
-            normalized[key] = str(path)
+        candidate = path if path.is_absolute() else output_dir / path
+        resolved = candidate.resolve(strict=False)
+        try:
+            normalized[key] = str(resolved.relative_to(output_root))
+        except ValueError as exc:
+            raise ValueError(f"{key} must stay within output dir: {value}") from exc
     normalized.setdefault("metadata", {})
     return normalized
 
