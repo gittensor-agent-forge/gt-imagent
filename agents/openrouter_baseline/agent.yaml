@@ -1,0 +1,13 @@
+id: openrouter-baseline
+name: OpenRouter Baseline Agent
+entrypoint: openrouter_agent.agent:OpenRouterBaselineAgent
+version: 0.1.0
+supports:
+  plan: true
+  reason: true
+  search: true
+  memory: true
+  feedback: true
+runtime:
+  network: false
+  gpu: false

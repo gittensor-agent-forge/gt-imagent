@@ -34,6 +34,20 @@ Live Qwen Image generation is configured through `agent.qwen_image.mode: live`
 and requires `DASHSCOPE_API_KEY` plus either `DASHSCOPE_WORKSPACE_ID` or
 `DASHSCOPE_ENDPOINT`.
 
+An OpenRouter-backed baseline is also available and shares the same deterministic
+mock mode:
+
+```bash
+python -m imagent_bench.runner \
+  --config configs/openrouter-smoke.yaml \
+  --agent agents/openrouter_baseline \
+  --output results/openrouter-smoke
+```
+
+Live generation is configured through `agent.openrouter_image.mode: live` and
+requires `OPENROUTER_API_KEY`. It calls OpenRouter's image API and records the
+gateway-reported spend as `cost_usd`.
+
 Trusted API benchmark runs can use GPT-5.5 as an image judge through
 `configs/api-gate.yaml`. This mode requires `OPENAI_API_KEY` in addition to the
 Qwen Image credentials.
