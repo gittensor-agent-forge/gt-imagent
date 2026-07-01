@@ -10,20 +10,14 @@ runtime:
   max_feedback_rounds: 2
 
 agent:
-  qwen_image:
+  openrouter_image:
     mode: live
-    provider: dashscope
-    model: qwen-image-2.0-pro
-    api_key_env: DASHSCOPE_API_KEY
-    workspace_id_env: DASHSCOPE_WORKSPACE_ID
-    endpoint_env: DASHSCOPE_ENDPOINT
-    region: ap-southeast-1
-    size: 2048*2048
-    n: 1
-    prompt_extend: true
-    watermark: false
+    provider: openrouter
+    model: openai/gpt-image-1
+    api_key_env: OPENROUTER_API_KEY
+    endpoint: https://openrouter.ai/api/v1/images
+    output_format: png
     timeout_seconds: 300
-    download_timeout_seconds: 120
 
 evaluation:
   image_judge:

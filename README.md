@@ -23,24 +23,10 @@ wheel includes the `imagent_bench` package and bundled task data, but it does
 not install the repository-local `configs/` files or bundled baseline agent
 directories.
 
-## Qwen Baseline
+## OpenRouter Baseline
 
-The repository includes a Qwen-style baseline agent with a deterministic mock
-mode for local testing:
-
-```bash
-python -m imagent_bench.runner \
-  --config configs/qwen-smoke.yaml \
-  --agent agents/qwen_baseline \
-  --output results/qwen-smoke
-```
-
-Live Qwen Image generation is configured through `agent.qwen_image.mode: live`
-and requires `DASHSCOPE_API_KEY` plus either `DASHSCOPE_WORKSPACE_ID` or
-`DASHSCOPE_ENDPOINT`.
-
-An OpenRouter-backed baseline is also available and shares the same deterministic
-mock mode:
+The repository includes an OpenRouter-backed baseline agent with a deterministic
+mock mode for local testing:
 
 ```bash
 python -m imagent_bench.runner \
@@ -54,8 +40,8 @@ requires `OPENROUTER_API_KEY`. It calls OpenRouter's image API and records the
 gateway-reported spend as `cost_usd`.
 
 Trusted API benchmark runs use the OpenRouter image judge configured in
-`configs/api-gate.yaml`. This mode requires `OPENROUTER_API_KEY` in addition to
-the Qwen Image credentials.
+`configs/api-gate.yaml`. This mode also uses the OpenRouter baseline agent, so
+`OPENROUTER_API_KEY` covers both generation and judging.
 
 The offline smoke and PR gate configs use the deterministic `mock_text` image
 judge by default. That provider inspects generated file text for stable contract
@@ -81,17 +67,16 @@ python -m imagent_bench.compare \
 
 Pull requests are evaluated by the offline benchmark workflow in
 `.github/workflows/benchmark-pr.yml`. The workflow installs benchmark code from
-the PR base branch, runs the base Qwen baseline and PR Qwen candidate, then
-compares the results with `configs/pr-gate.yaml` when the Qwen baseline agent
-changes.
+the PR base branch, runs the base OpenRouter baseline and PR OpenRouter
+candidate, then compares the results with `configs/pr-gate.yaml` when the
+OpenRouter baseline agent changes.
 
 Clean main-branch benchmark results can be promoted into baseline history with:
 
 ```bash
 python -m imagent_bench.promote_baseline \
   --result results/api-main/results.json \
-  --baseline-dir baselines/qwen_baseline/ia_bench_v1_api
+  --baseline-dir baselines/openrouter_baseline/ia_bench_v1_api
 ```
 
-See `docs/api_benchmark.md` for the trusted Qwen Image and OpenRouter benchmark
-workflow setup.
+See `docs/api_benchmark.md` for the trusted OpenRouter benchmark workflow setup.

@@ -3,8 +3,8 @@
 The PR benchmark workflow checks out both the base branch and the pull request
 head. It installs benchmark code from the base checkout, then evaluates:
 
-- the Qwen baseline agent from the base checkout,
-- the Qwen candidate agent from the pull request checkout.
+- the OpenRouter baseline agent from the base checkout,
+- the OpenRouter candidate agent from the pull request checkout.
 
 The comparison step uses acceptance rules from `configs/pr-gate.yaml` in the
 base checkout. This prevents a pull request from weakening the benchmark runner,
@@ -12,9 +12,9 @@ task suite, evaluator, or thresholds in the same change that it is trying to
 merge.
 
 The workflow runs the benchmark for every PR. The strict improvement gate is
-enforced only when files under `agents/qwen_baseline/` change, so documentation,
-configuration, or CI-only changes can still be reviewed without pretending to be
-agent improvements.
+enforced only when files under `agents/openrouter_baseline/` change, so
+documentation, configuration, or CI-only changes can still be reviewed without
+pretending to be agent improvements.
 
 The workflow uses `pull_request`, not `pull_request_target`, and does not expose
 repository secrets to candidate code.

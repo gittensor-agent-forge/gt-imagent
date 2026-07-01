@@ -14,7 +14,7 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 def test_compare_accepts_matching_results_with_no_regression_rule(tmp_path: Path) -> None:
-    result = run(Path("configs/qwen-smoke.yaml").resolve(), "agents/qwen_baseline", tmp_path / "base")
+    result = run(Path("configs/openrouter-smoke.yaml").resolve(), "agents/openrouter_baseline", tmp_path / "base")
     baseline_path = tmp_path / "base" / "results.json"
     candidate_path = tmp_path / "candidate.json"
     _write_json(candidate_path, result)
@@ -39,7 +39,7 @@ acceptance:
 
 
 def test_compare_rejects_missing_required_improvement(tmp_path: Path) -> None:
-    result = run(Path("configs/qwen-smoke.yaml").resolve(), "agents/qwen_baseline", tmp_path / "base")
+    result = run(Path("configs/openrouter-smoke.yaml").resolve(), "agents/openrouter_baseline", tmp_path / "base")
     baseline_path = tmp_path / "base" / "results.json"
     candidate = copy.deepcopy(result)
     candidate_path = tmp_path / "candidate.json"

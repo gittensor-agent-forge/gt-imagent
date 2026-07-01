@@ -10,7 +10,7 @@ runtime:
   max_feedback_rounds: 1
 
 agent:
-  qwen_image:
+  openrouter_image:
     mode: mock
 
 metrics:

@@ -48,8 +48,7 @@ class MyAgent:
 are stripped by the runner) and must write both an image and a JSON **trace** with
 `planning`, `grounding`, `final_generation_context`, and `feedback` sections. The
 benchmark scores how the agent bridges the context gap, not just whether it emits an
-image. See `agents/qwen_baseline` and `agents/openrouter_baseline` for full
-examples, and `benchmark-agent.yaml` for the candidate-agent selector.
+image. See `agents/openrouter_baseline` for a full example.
 
 If your agent needs extra packages, add `agents/<agent_id>/requirements.txt`.
 
@@ -67,9 +66,9 @@ If your agent needs extra packages, add `agents/<agent_id>/requirements.txt`.
 python -m pip install -e ".[dev]"
 python -m imagent_bench.config validate configs/local-smoke.yaml
 python -m imagent_bench.runner \
-  --config configs/qwen-smoke.yaml \
-  --agent agents/qwen_baseline \
-  --output results/qwen-smoke
+  --config configs/openrouter-smoke.yaml \
+  --agent agents/openrouter_baseline \
+  --output results/openrouter-smoke
 python -m pytest
 ```
 

@@ -1,25 +1,18 @@
 # API Benchmark
 
-The trusted API benchmark runs the Qwen baseline agent in live Qwen Image mode
-and evaluates generated images with the OpenRouter image judge configured in
-`configs/api-gate.yaml`.
+The trusted API benchmark runs the OpenRouter baseline agent in live OpenRouter
+image mode and evaluates generated images with the OpenRouter image judge
+configured in `configs/api-gate.yaml`.
 
-The image judge uses the OpenRouter Chat Completions API and reads
-`OPENROUTER_API_KEY`. OpenRouter exposes many vision models through one
-endpoint; `configs/api-gate.yaml` defaults to `openai/gpt-4o`.
+The same `OPENROUTER_API_KEY` covers both generation and judging. OpenRouter
+exposes image generation through `/api/v1/images` and vision judging through the
+Chat Completions endpoint; `configs/api-gate.yaml` defaults to
+`openai/gpt-image-1` for generation and `openai/gpt-4o` for judging.
 
 Configure the `benchmark-api` GitHub Environment with:
 
 ```text
-DASHSCOPE_API_KEY
 OPENROUTER_API_KEY
-```
-
-and one of:
-
-```text
-DASHSCOPE_WORKSPACE_ID
-DASHSCOPE_ENDPOINT
 ```
 
 The pull request API workflow runs only for same-repository branches that carry
@@ -31,8 +24,8 @@ API run.
 The main-branch API workflow promotes successful benchmark results into:
 
 ```text
-baselines/qwen_baseline/ia_bench_v1_api/latest.json
-baselines/qwen_baseline/ia_bench_v1_api/history/
+baselines/openrouter_baseline/ia_bench_v1_api/latest.json
+baselines/openrouter_baseline/ia_bench_v1_api/history/
 ```
 
 If the required secrets are not configured, the API workflows skip live

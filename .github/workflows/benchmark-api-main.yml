@@ -18,10 +18,7 @@ jobs:
     environment: benchmark-api
 
     env:
-      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-      DASHSCOPE_WORKSPACE_ID: ${{ secrets.DASHSCOPE_WORKSPACE_ID }}
-      DASHSCOPE_ENDPOINT: ${{ secrets.DASHSCOPE_ENDPOINT }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
     steps:
       - name: Checkout main
@@ -32,7 +29,7 @@ jobs:
       - name: Check API secrets
         id: api_secrets
         run: |
-          if [ -n "$DASHSCOPE_API_KEY" ] && [ -n "$OPENAI_API_KEY" ] && { [ -n "$DASHSCOPE_WORKSPACE_ID" ] || [ -n "$DASHSCOPE_ENDPOINT" ]; }; then
+          if [ -n "$OPENROUTER_API_KEY" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "API benchmark secrets are not fully configured; skipping trusted API benchmark."
@@ -58,7 +55,7 @@ jobs:
           python -m imagent_bench.config validate configs/api-gate.yaml
           python -m imagent_bench.runner \
             --config configs/api-gate.yaml \
-            --agent agents/qwen_baseline \
+            --agent agents/openrouter_baseline \
             --output results/api-main
 
       - name: Promote API result to baseline history
@@ -66,7 +63,7 @@ jobs:
         run: |
           python -m imagent_bench.promote_baseline \
             --result results/api-main/results.json \
-            --baseline-dir baselines/qwen_baseline/ia_bench_v1_api \
+            --baseline-dir baselines/openrouter_baseline/ia_bench_v1_api \
             --commit-sha "${GITHUB_SHA}"
 
       - name: Commit promoted API baseline
@@ -74,7 +71,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add baselines/qwen_baseline/ia_bench_v1_api
+          git add baselines/openrouter_baseline/ia_bench_v1_api
           if git diff --cached --quiet; then
             echo "No API baseline changes to commit."
           else

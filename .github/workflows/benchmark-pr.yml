@@ -39,7 +39,7 @@ jobs:
             repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files \
             --paginate \
             --jq '.[].filename' > results/changed-files.txt
-          if grep -q '^agents/qwen_baseline/' results/changed-files.txt; then
+          if grep -q '^agents/openrouter_baseline/' results/changed-files.txt; then
             echo "enforce_improvement=true" >> "$GITHUB_OUTPUT"
           else
             echo "enforce_improvement=false" >> "$GITHUB_OUTPUT"
@@ -70,7 +70,7 @@ jobs:
         run: |
           python -m imagent_bench.runner \
             --config configs/pr-gate.yaml \
-            --agent agents/qwen_baseline \
+            --agent agents/openrouter_baseline \
             --output ../results/base
 
       - name: Run candidate from PR
@@ -78,7 +78,7 @@ jobs:
         run: |
           python -m imagent_bench.runner \
             --config configs/pr-gate.yaml \
-            --agent ../head/agents/qwen_baseline \
+            --agent ../head/agents/openrouter_baseline \
             --output ../results/pr
 
       - name: Compare candidate against baseline
@@ -97,7 +97,7 @@ jobs:
           {
             echo "# Benchmark Comparison"
             echo
-            echo "The benchmark ran for this PR, but the improvement gate was not enforced because no Qwen baseline agent files changed."
+            echo "The benchmark ran for this PR, but the improvement gate was not enforced because no OpenRouter baseline agent files changed."
           } > results/comparison.md
 
       - name: Upload benchmark artifacts
