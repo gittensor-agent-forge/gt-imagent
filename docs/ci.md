@@ -24,5 +24,7 @@ Trusted live API benchmarks are handled by separate workflows:
 - `.github/workflows/benchmark-api-pr.yml`
 - `.github/workflows/benchmark-api-main.yml`
 
-These workflows use the protected `benchmark-api` environment and skip execution
-when required API secrets are not configured.
+These workflows use the protected `benchmark-api` environment. The PR workflow
+only runs for same-repository branches that are labeled
+`trusted-api-benchmark`, and both workflows skip execution when required API
+secrets are not configured.

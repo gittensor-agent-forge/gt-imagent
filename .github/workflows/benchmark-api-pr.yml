@@ -2,6 +2,7 @@ name: Benchmark API PR
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -11,8 +12,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      trusted_run: ${{ steps.decision.outputs.trusted_run }}
+
+    steps:
+      - name: Check trusted API benchmark eligibility
+        id: decision
+        env:
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if [ "$SAME_REPO" != "true" ]; then
+            echo "trusted_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping trusted API benchmark because this PR does not come from the repository itself."
+            exit 0
+          fi
+          if echo "$LABELS_JSON" | grep -q '"trusted-api-benchmark"'; then
+            echo "trusted_run=true" >> "$GITHUB_OUTPUT"
+            echo "Trusted API benchmark enabled for this PR."
+          else
+            echo "trusted_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping trusted API benchmark because the PR is missing the trusted-api-benchmark label."
+          fi
+
   benchmark-api:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: preflight
+    if: ${{ needs.preflight.outputs.trusted_run == 'true' }}
     runs-on: ubuntu-latest
     environment: benchmark-api
 

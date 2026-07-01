@@ -24,9 +24,11 @@ DASHSCOPE_WORKSPACE_ID
 DASHSCOPE_ENDPOINT
 ```
 
-The pull request API workflow runs only for same-repository branches because
-candidate agent code receives API credentials. Forked PRs should use the offline
-benchmark workflow first, then be tested from a trusted branch if needed.
+The pull request API workflow runs only for same-repository branches that carry
+the `trusted-api-benchmark` label because candidate agent code receives API
+credentials. Forked PRs should use the offline benchmark workflow first, then be
+tested from a trusted branch after a maintainer explicitly opts into the trusted
+API run.
 
 The main-branch API workflow promotes successful benchmark results into:
 
