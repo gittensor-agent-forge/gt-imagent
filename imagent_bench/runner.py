@@ -160,6 +160,7 @@ def _write_summary(path: Path, result: dict[str, Any]) -> None:
         f"- Context gap score: `{metrics['context_gap_score']:.4f}`",
         f"- Trace validity: `{metrics['trace_validity']:.4f}`",
         f"- Latency ms: `{metrics['latency_ms']:.2f}`",
+        f"- Cost USD: `{metrics['cost_usd']:.6f}`",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -221,7 +222,8 @@ def run(config_path: Path, agent_arg: str, output_dir: Path) -> dict[str, Any]:
                 }
             )
 
-    metrics = aggregate(case_results, config)
+    judge_cost_usd = float(getattr(image_judge, "total_cost_usd", 0.0) or 0.0)
+    metrics = aggregate(case_results, config, judge_cost_usd=judge_cost_usd)
     metrics["failed_generations"] = failures
 
     result = {
