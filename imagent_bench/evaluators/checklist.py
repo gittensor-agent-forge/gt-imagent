@@ -125,7 +125,7 @@ def evaluate_case(
                 passed, reason = False, "image judge did not return a verdict"
                 provider = None
             else:
-                passed, reason = bool(verdict.get("passed")), str(verdict.get("reason", ""))
+                passed, reason = verdict["passed"], verdict["reason"]
                 provider = verdict.get("provider")
         else:
             passed, reason = _check_one(check, trace)

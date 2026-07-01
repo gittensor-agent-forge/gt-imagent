@@ -11,6 +11,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 
 class JudgeError(RuntimeError):
     """Raised when a live judge cannot produce a usable verdict."""
@@ -54,6 +56,7 @@ _JUDGMENT_SCHEMA: dict[str, Any] = {
         }
     },
 }
+_JUDGMENT_VALIDATOR = Draft202012Validator(_JUDGMENT_SCHEMA)
 
 
 def _judge_prompt(
@@ -89,9 +92,11 @@ def _normalize_verdicts(
     provider: str,
     cached: bool,
 ) -> dict[int, dict[str, Any]]:
+    errors = [error.message for error in _JUDGMENT_VALIDATOR.iter_errors(verdict)]
+    if errors:
+        raise JudgeError(f"{provider} verdict schema error: {'; '.join(errors)}")
     returned = verdict.get("checks")
-    if not isinstance(returned, list):
-        raise JudgeError(f"{provider} verdict missing checks array")
+    assert isinstance(returned, list)
     by_index = {int(item["index"]): item for item in returned if isinstance(item, dict) and "index" in item}
     results: dict[int, dict[str, Any]] = {}
     for index, _ in image_checks:
@@ -105,8 +110,8 @@ def _normalize_verdicts(
             }
             continue
         results[index] = {
-            "passed": bool(item.get("passed")),
-            "reason": str(item.get("reason", "")),
+            "passed": item["passed"],
+            "reason": item["reason"],
             "provider": provider,
             "cached": cached,
         }

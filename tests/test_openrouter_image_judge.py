@@ -125,3 +125,20 @@ def test_openrouter_judge_records_usage_cost(monkeypatch, tmp_path: Path) -> Non
     evaluate_case(case, output, tmp_path, image_judge=judge)
 
     assert judge.total_cost_usd == 0.0123
+
+
+def test_openrouter_judge_rejects_non_boolean_passed_values(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    case, output = _write_case_and_output(tmp_path)
+    judge = build_image_judge(_judge_config(), tmp_path)
+
+    def fake_post(payload: dict) -> dict:
+        content = json.dumps({"checks": [{"index": 0, "passed": "false", "reason": "bad type"}]})
+        return {"choices": [{"message": {"role": "assistant", "content": content}}]}
+
+    monkeypatch.setattr(judge, "_post_json", fake_post)
+
+    evaluation = evaluate_case(case, output, tmp_path, image_judge=judge)
+
+    assert evaluation["passed"] is False
+    assert "verdict schema error" in evaluation["checks"][0]["reason"]
