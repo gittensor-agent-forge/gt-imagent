@@ -176,6 +176,7 @@ class _ApiImageJudge:
         self.timeout_seconds = int(judge_config.get("timeout_seconds", 120))
         self.detail = str(judge_config.get("detail", "high"))
         self.fail_closed = bool(judge_config.get("fail_closed", True))
+        self.total_cost_usd = 0.0
         cache_dir = judge_config.get("cache_dir")
         self.cache_dir = Path(cache_dir) if cache_dir else output_dir / "judge_cache"
         if not self.cache_dir.is_absolute():
@@ -237,6 +238,8 @@ class _ApiImageJudge:
 
         response = self._post_json(self._request_payload(prompt, image_path))
         verdict = _parse_json_object(self._extract_verdict_text(response))
+        cost_usd = self._response_cost(response)
+        self.total_cost_usd += cost_usd
         cache_path.write_text(
             json.dumps(
                 {
@@ -245,6 +248,7 @@ class _ApiImageJudge:
                     "image_sha256": image_sha,
                     "prompt": prompt,
                     "verdict": verdict,
+                    "cost_usd": cost_usd,
                     "raw_response": response,
                 },
                 indent=2,
@@ -286,6 +290,10 @@ class _ApiImageJudge:
 
     def _extract_verdict_text(self, response: dict[str, Any]) -> str:
         raise NotImplementedError
+
+    def _response_cost(self, response: dict[str, Any]) -> float:
+        """USD cost of one judge call; providers that report it override this."""
+        return 0.0
 
 
 class OpenAIImageJudge(_ApiImageJudge):
@@ -391,6 +399,12 @@ class OpenRouterImageJudge(_ApiImageJudge):
 
     def _extract_verdict_text(self, response: dict[str, Any]) -> str:
         return _extract_message_content(response)
+
+    def _response_cost(self, response: dict[str, Any]) -> float:
+        usage = response.get("usage")
+        if isinstance(usage, dict) and usage.get("cost") is not None:
+            return float(usage["cost"])
+        return 0.0
 
 
 def build_image_judge(config: dict[str, Any], output_dir: Path):

@@ -107,3 +107,21 @@ def test_openrouter_judge_parses_failed_verdict(monkeypatch, tmp_path: Path) -> 
 
     assert evaluation["passed"] is False
     assert evaluation["checks"][0]["reason"] == "no PASS visible"
+
+
+def test_openrouter_judge_records_usage_cost(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    case, output = _write_case_and_output(tmp_path)
+    judge = build_image_judge(_judge_config(), tmp_path)
+    assert judge.total_cost_usd == 0.0
+
+    def fake_post(payload: dict) -> dict:
+        response = _chat_response(True, "shows PASS")
+        response["usage"] = {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110, "cost": 0.0123}
+        return response
+
+    monkeypatch.setattr(judge, "_post_json", fake_post)
+
+    evaluate_case(case, output, tmp_path, image_judge=judge)
+
+    assert judge.total_cost_usd == 0.0123
