@@ -23,6 +23,70 @@ def _metric(result: dict[str, Any], name: str) -> float:
     return float(metrics[name])
 
 
+def _result_case_ids(result: dict[str, Any]) -> list[str]:
+    cases = result.get("cases", [])
+    if not isinstance(cases, list):
+        return []
+
+    identifiers: list[str] = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            identifiers.append(f"invalid-case-{index}")
+            continue
+        run_id = case.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            identifiers.append(run_id)
+            continue
+        case_id = str(case.get("case_id", f"case-{index}"))
+        seed = case.get("seed", "unknown")
+        identifiers.append(f"{case_id}--seed-{seed}")
+    return sorted(identifiers)
+
+
+def _check_result_integrity(label: str, result: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    metrics = result.get("metrics", {})
+    cases = result.get("cases", [])
+    if not isinstance(cases, list):
+        return [f"{label} cases must be an array"]
+
+    total_cases = metrics.get("total_cases")
+    if total_cases is not None and int(total_cases) != len(cases):
+        failures.append(f"{label} cases length={len(cases)} total_cases={total_cases}")
+
+    completed_cases = metrics.get("completed_cases")
+    if completed_cases is not None and int(completed_cases) != len(cases):
+        failures.append(f"{label} cases length={len(cases)} completed_cases={completed_cases}")
+    return failures
+
+
+def _check_result_compatibility(baseline: dict[str, Any], candidate: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    for field in ("id", "version", "hash"):
+        baseline_value = baseline.get("suite", {}).get(field)
+        candidate_value = candidate.get("suite", {}).get(field)
+        if baseline_value != candidate_value:
+            failures.append(f"suite.{field} mismatch: baseline={baseline_value!r} candidate={candidate_value!r}")
+
+    baseline_config_hash = baseline.get("config", {}).get("hash")
+    candidate_config_hash = candidate.get("config", {}).get("hash")
+    if baseline_config_hash != candidate_config_hash:
+        failures.append(
+            f"config.hash mismatch: baseline={baseline_config_hash!r} candidate={candidate_config_hash!r}"
+        )
+
+    baseline_seeds = baseline.get("runtime", {}).get("seeds")
+    candidate_seeds = candidate.get("runtime", {}).get("seeds")
+    if baseline_seeds != candidate_seeds:
+        failures.append(f"runtime.seeds mismatch: baseline={baseline_seeds!r} candidate={candidate_seeds!r}")
+
+    baseline_case_ids = _result_case_ids(baseline)
+    candidate_case_ids = _result_case_ids(candidate)
+    if baseline_case_ids != candidate_case_ids:
+        failures.append("case matrix mismatch between baseline and candidate results")
+    return failures
+
+
 def _evaluate_rule(rule: dict[str, Any], baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     metric = rule["metric"]
     mode = rule["mode"]
@@ -128,6 +192,11 @@ def compare(config_path: Path, baseline_path: Path, candidate_path: Path, output
                 failures.append(
                     f"{label} completed_cases={metrics.get('completed_cases')} total_cases={metrics.get('total_cases')}"
                 )
+
+    for label, result in (("baseline", baseline), ("candidate", candidate)):
+        failures.extend(_check_result_integrity(label, result))
+
+    failures.extend(_check_result_compatibility(baseline, candidate))
 
     rule_results = [
         _evaluate_rule(rule, baseline, candidate)

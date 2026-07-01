@@ -63,3 +63,61 @@ acceptance:
 
     assert comparison["accepted"] is False
     assert "rule failed for ia_score" in comparison["failures"][0]
+
+
+def test_compare_rejects_mismatched_suite_hash(tmp_path: Path) -> None:
+    result = run(Path("configs/local-smoke.yaml").resolve(), "tests/fixtures/echo_agent", tmp_path / "base")
+    baseline_path = tmp_path / "base" / "results.json"
+    candidate = copy.deepcopy(result)
+    candidate["suite"]["hash"] = "not-the-same-suite"
+    candidate_path = tmp_path / "candidate.json"
+    _write_json(candidate_path, candidate)
+
+    config_path = tmp_path / "compare.yaml"
+    config_path.write_text(
+        """
+acceptance:
+  require_schema_valid: true
+  require_all_cases_completed: true
+  rules:
+    - metric: ia_score
+      mode: higher_is_better
+      max_regression_vs_baseline: 0.0
+""",
+        encoding="utf-8",
+    )
+
+    comparison = compare(config_path, baseline_path, candidate_path, tmp_path / "comparison.json")
+
+    assert comparison["accepted"] is False
+    assert "suite.hash mismatch" in comparison["failures"][0]
+
+
+def test_compare_rejects_case_matrix_mismatch(tmp_path: Path) -> None:
+    result = run(Path("configs/local-smoke.yaml").resolve(), "tests/fixtures/echo_agent", tmp_path / "base")
+    baseline_path = tmp_path / "base" / "results.json"
+    candidate = copy.deepcopy(result)
+    candidate["cases"] = candidate["cases"][:-1]
+    candidate["metrics"]["total_cases"] = len(candidate["cases"])
+    candidate["metrics"]["completed_cases"] = len(candidate["cases"])
+    candidate_path = tmp_path / "candidate.json"
+    _write_json(candidate_path, candidate)
+
+    config_path = tmp_path / "compare.yaml"
+    config_path.write_text(
+        """
+acceptance:
+  require_schema_valid: true
+  require_all_cases_completed: true
+  rules:
+    - metric: ia_score
+      mode: higher_is_better
+      max_regression_vs_baseline: 0.0
+""",
+        encoding="utf-8",
+    )
+
+    comparison = compare(config_path, baseline_path, candidate_path, tmp_path / "comparison.json")
+
+    assert comparison["accepted"] is False
+    assert "case matrix mismatch" in comparison["failures"][0]
