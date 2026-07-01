@@ -1,0 +1,85 @@
+name: Benchmark Verdict
+
+# Runs after "Benchmark PR" completes and posts the pass/regression verdict back to
+# the pull request as a comment and a label. It never runs PR code and takes no
+# destructive action (no auto-merge, no auto-close) — maintainers act on the label.
+
+on:
+  workflow_run:
+    workflows: ["Benchmark PR"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  verdict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post benchmark verdict
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            if (!["success", "failure"].includes(run.conclusion)) {
+              core.info(`Ignoring run with conclusion "${run.conclusion}".`);
+              return;
+            }
+
+            // The benchmark job uploads an artifact named benchmark-pr-<PR number>,
+            // which resolves the PR reliably even for fork pull requests.
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+            });
+            const artifact = artifacts.data.artifacts.find((a) => a.name.startsWith("benchmark-pr-"));
+            if (!artifact) {
+              core.info("No benchmark-pr artifact found; nothing to do.");
+              return;
+            }
+            const prNumber = parseInt(artifact.name.replace("benchmark-pr-", ""), 10);
+            if (!Number.isInteger(prNumber)) {
+              core.info(`Could not parse a PR number from artifact "${artifact.name}".`);
+              return;
+            }
+
+            // Bind the artifact-derived PR number to this run's head SHA. Without this,
+            // a fork PR could upload a crafted artifact name to spoof a verdict onto a
+            // different pull request. A mismatch also means the run is stale (the PR was
+            // updated since), so skip it and let the newer run post the verdict.
+            let pr;
+            try {
+              pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+            } catch (error) {
+              core.info(`PR #${prNumber} not found; skipping.`);
+              return;
+            }
+            if (pr.data.head.sha !== run.head_sha) {
+              core.info(`PR #${prNumber} head does not match run head ${run.head_sha}; skipping.`);
+              return;
+            }
+
+            const passed = run.conclusion === "success";
+            const addLabel = passed ? "benchmark-passed" : "benchmark-regression";
+            const removeLabel = passed ? "benchmark-regression" : "benchmark-passed";
+            const common = { owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber };
+
+            try {
+              await github.rest.issues.removeLabel({ ...common, name: removeLabel });
+            } catch (error) {
+              core.info(`Label "${removeLabel}" not present; skipping removal.`);
+            }
+            await github.rest.issues.addLabels({ ...common, labels: [addLabel] });
+
+            const body = passed
+              ? `✅ **Benchmark passed.** This pull request meets the gate in \`configs/pr-gate.yaml\` and is eligible to merge. [Run details](${run.html_url}).`
+              : `❌ **Benchmark regression.** This pull request did not pass the gate in \`configs/pr-gate.yaml\`. Review the [run details](${run.html_url}) and push a fix, or a maintainer will close it.`;
+            await github.rest.issues.createComment({ ...common, body });
