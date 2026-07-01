@@ -293,6 +293,244 @@ class OpenAIImageJudge:
         return results
 
 
+class OpenRouterImageJudge:
+    """Image judge backed by the OpenRouter Chat Completions API.
+
+    OpenRouter is OpenAI Chat Completions compatible, so image input uses the
+    ``image_url`` content part and structured output uses ``response_format`` with a
+    JSON schema. ``provider.require_parameters`` makes OpenRouter route only to
+    providers that honor the schema instead of returning free-form text.
+    """
+
+    provider = "openrouter"
+
+    def __init__(self, config: dict[str, Any], output_dir: Path) -> None:
+        judge_config = config.get("evaluation", {}).get("image_judge", {})
+        self.config = judge_config
+        self.output_dir = output_dir
+        self.model = str(judge_config.get("model", "openai/gpt-4o"))
+        self.api_key_env = str(judge_config.get("api_key_env", "OPENROUTER_API_KEY"))
+        self.api_key = os.environ.get(self.api_key_env)
+        self.endpoint = str(judge_config.get("endpoint", "https://openrouter.ai/api/v1/chat/completions"))
+        self.timeout_seconds = int(judge_config.get("timeout_seconds", 120))
+        self.detail = str(judge_config.get("detail", "high"))
+        self.fail_closed = bool(judge_config.get("fail_closed", True))
+        self.referer = judge_config.get("referer")
+        self.title = judge_config.get("title")
+        cache_dir = judge_config.get("cache_dir")
+        self.cache_dir = Path(cache_dir) if cache_dir else output_dir / "judge_cache"
+        if not self.cache_dir.is_absolute():
+            self.cache_dir = Path.cwd() / self.cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def evaluate_image_checks(
+        self,
+        case: dict[str, Any],
+        output: dict[str, Any],
+        trace: dict[str, Any],
+        checks: list[dict[str, Any]],
+    ) -> dict[int, dict[str, Any]]:
+        image_checks = [(index, check) for index, check in enumerate(checks) if check.get("type") == "image_contains"]
+        if not image_checks:
+            return {}
+        try:
+            return self._evaluate(case, output, trace, image_checks)
+        except Exception as exc:  # noqa: BLE001
+            if not self.fail_closed:
+                raise
+            return {
+                index: {
+                    "passed": False,
+                    "reason": f"openrouter judge error: {exc}",
+                    "provider": self.provider,
+                }
+                for index, _ in image_checks
+            }
+
+    def _evaluate(
+        self,
+        case: dict[str, Any],
+        output: dict[str, Any],
+        trace: dict[str, Any],
+        image_checks: list[tuple[int, dict[str, Any]]],
+    ) -> dict[int, dict[str, Any]]:
+        if not self.api_key:
+            raise JudgeError(f"{self.api_key_env} is required for OpenRouter image judging")
+        image_path = resolve_image_path(output, self.output_dir)
+        if image_path is None or not image_path.exists():
+            raise JudgeError(f"image does not exist: {image_path}")
+
+        image_sha = _file_sha256(image_path)
+        prompt = self._judge_prompt(case, trace, image_checks)
+        cache_key = _stable_sha256(
+            {
+                "provider": self.provider,
+                "model": self.model,
+                "detail": self.detail,
+                "image_sha256": image_sha,
+                "prompt": prompt,
+            }
+        )
+        cache_path = self.cache_dir / f"{cache_key}.json"
+        if cache_path.exists():
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            return self._normalize_verdicts(cached["verdict"], image_checks, cached=True)
+
+        response = self._post_json(self._request_payload(prompt, image_path))
+        verdict = _parse_json_object(_extract_message_content(response))
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "cache_key": cache_key,
+                    "model": self.model,
+                    "image_sha256": image_sha,
+                    "prompt": prompt,
+                    "verdict": verdict,
+                    "raw_response": response,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return self._normalize_verdicts(verdict, image_checks, cached=False)
+
+    def _judge_prompt(
+        self,
+        case: dict[str, Any],
+        trace: dict[str, Any],
+        image_checks: list[tuple[int, dict[str, Any]]],
+    ) -> str:
+        final_context = trace.get("final_generation_context", {}) if isinstance(trace, dict) else {}
+        criteria = [
+            {
+                "index": index,
+                "type": check.get("type"),
+                "required_visible_values": _check_values(check),
+            }
+            for index, check in image_checks
+        ]
+        return (
+            "You are judging an image-agent benchmark output. "
+            "Evaluate only visible content in the image. Do not use the file name, hidden metadata, "
+            "or the expected answer as evidence unless it is visibly present. "
+            "Return false for ambiguous, missing, or materially incorrect content.\n\n"
+            f"Case id: {case.get('id')}\n"
+            f"User prompt: {case.get('prompt')}\n"
+            f"Agent final generation prompt: {final_context.get('prompt', '')}\n"
+            f"Criteria JSON: {json.dumps(criteria, ensure_ascii=True, sort_keys=True)}\n\n"
+            "Return JSON matching the provided schema."
+        )
+
+    def _request_payload(self, prompt: str, image_path: Path) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _image_data_url(image_path), "detail": self.detail},
+                        },
+                    ],
+                }
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "image_agent_judgment",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "required": ["checks"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "checks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["index", "passed", "reason"],
+                                    "additionalProperties": False,
+                                    "properties": {
+                                        "index": {"type": "integer"},
+                                        "passed": {"type": "boolean"},
+                                        "reason": {"type": "string"},
+                                    },
+                                },
+                            }
+                        },
+                    },
+                },
+            },
+            "provider": {"require_parameters": True},
+        }
+        if self.config.get("max_output_tokens"):
+            payload["max_tokens"] = int(self.config["max_output_tokens"])
+        if self.config.get("reasoning_effort"):
+            payload["reasoning"] = {"effort": str(self.config["reasoning_effort"])}
+        return payload
+
+    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.referer:
+            headers["HTTP-Referer"] = str(self.referer)
+        if self.title:
+            headers["X-OpenRouter-Title"] = str(self.title)
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise JudgeError(f"OpenRouter HTTP {exc.code}: {body}") from exc
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise JudgeError("OpenRouter response must be a JSON object")
+        if data.get("error"):
+            raise JudgeError(f"OpenRouter API error: {data['error']}")
+        return data
+
+    def _normalize_verdicts(
+        self,
+        verdict: dict[str, Any],
+        image_checks: list[tuple[int, dict[str, Any]]],
+        cached: bool,
+    ) -> dict[int, dict[str, Any]]:
+        returned = verdict.get("checks")
+        if not isinstance(returned, list):
+            raise JudgeError("OpenRouter verdict missing checks array")
+        by_index = {int(item["index"]): item for item in returned if isinstance(item, dict) and "index" in item}
+        results: dict[int, dict[str, Any]] = {}
+        for index, _ in image_checks:
+            item = by_index.get(index)
+            if not item:
+                results[index] = {
+                    "passed": False,
+                    "reason": "openrouter judge omitted this check",
+                    "provider": self.provider,
+                    "cached": cached,
+                }
+                continue
+            results[index] = {
+                "passed": bool(item.get("passed")),
+                "reason": str(item.get("reason", "")),
+                "provider": self.provider,
+                "cached": cached,
+            }
+        return results
+
+
 def build_image_judge(config: dict[str, Any], output_dir: Path):
     judge_config = config.get("evaluation", {}).get("image_judge", {})
     provider = str(judge_config.get("provider", "mock_text"))
@@ -300,6 +538,8 @@ def build_image_judge(config: dict[str, Any], output_dir: Path):
         return MockTextJudge(config, output_dir)
     if provider == "openai":
         return OpenAIImageJudge(config, output_dir)
+    if provider == "openrouter":
+        return OpenRouterImageJudge(config, output_dir)
     raise ValueError(f"Unknown image judge provider: {provider}")
 
 
@@ -337,6 +577,17 @@ def _extract_response_text(response: dict[str, Any]) -> str:
     if texts:
         return "\n".join(texts)
     raise JudgeError("OpenAI response did not contain output text")
+
+
+def _extract_message_content(response: dict[str, Any]) -> str:
+    choices = response.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            message = choice.get("message", {}) if isinstance(choice, dict) else {}
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+    raise JudgeError("OpenRouter response did not contain message content")
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:

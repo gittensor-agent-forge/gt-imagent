@@ -38,6 +38,11 @@ Trusted API benchmark runs can use GPT-5.5 as an image judge through
 `configs/api-gate.yaml`. This mode requires `OPENAI_API_KEY` in addition to the
 Qwen Image credentials.
 
+The image judge can also run through the OpenRouter Chat Completions API by setting
+`evaluation.image_judge.provider: openrouter` (default model `openai/gpt-4o`). This
+mode reads `OPENROUTER_API_KEY` and reaches many vision-capable models through a
+single credential.
+
 ## Result Comparison
 
 Benchmark results can be compared with configurable acceptance rules:
