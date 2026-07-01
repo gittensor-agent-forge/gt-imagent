@@ -13,6 +13,8 @@ def test_qwen_baseline_mock_runs_smoke_suite(tmp_path: Path) -> None:
     assert result["agent"]["id"] == "qwen-baseline"
     assert result["metrics"]["failed_generations"] == 0
     assert result["metrics"]["total_cases"] == 6
+    assert result["metrics"]["pass_rate"] == 1.0
+    assert result["metrics"]["checklist_accuracy"] == 1.0
     assert result["cases"][0]["output"]["metadata"]["provider"] == "mock"
 
 
