@@ -14,8 +14,8 @@ class OpenRouterBaselineAgent:
     """Qwen-style baseline with an offline mock mode and a live OpenRouter mode.
 
     In mock mode it writes a deterministic SVG so the offline suite runs without
-    credentials. In live mode it generates a PNG through OpenRouter's image API and
-    records the real ``cost_usd`` reported by the gateway.
+    credentials. In live mode it generates an image through OpenRouter's image API
+    and records the real ``cost_usd`` reported by the gateway.
     """
 
     def setup(self, config: dict[str, Any], workdir: Path) -> None:
@@ -51,6 +51,7 @@ class OpenRouterBaselineAgent:
             final_prompt = f"{final_prompt} | verified revision: {feedback[-1]['revision']}"
 
         image_format = "png" if self.mode == "live" else "svg"
+        image_path = images_dir / f"{run_id}.{image_format}"
         trace = {
             "planning": {
                 "missing_context": self._missing_context(case),
@@ -70,16 +71,19 @@ class OpenRouterBaselineAgent:
         }
 
         trace_path = traces_dir / f"{run_id}.json"
-        image_path = images_dir / f"{run_id}.{image_format}"
         self._write_json(trace_path, trace)
 
         if self.mode == "live":
             if self.client is None:
                 raise RuntimeError("OpenRouter client was not initialized")
             generation_metadata = self.client.generate(final_prompt, seed, image_path)
+            image_path = Path(generation_metadata["image_path"])
+            trace["planning"]["generation_plan"]["format"] = image_path.suffix.lstrip(".")
+            self._write_json(trace_path, trace)
         else:
             self._write_svg(image_path, case, final_prompt, capability)
             generation_metadata = {
+                "image_path": str(image_path),
                 "provider": "mock",
                 "model": "deterministic-openrouter-style-baseline",
             }

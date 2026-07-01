@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 import os
 import urllib.error
 import urllib.request
@@ -49,12 +50,14 @@ class OpenRouterImageClient:
 
         response = self._post_json(payload)
         encoded, media_type = self._extract_image(response)
+        output_path = _resolved_output_path(output_path, media_type, self.output_format)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(base64.b64decode(encoded))
 
         usage = response.get("usage", {})
         usage = usage if isinstance(usage, dict) else {}
         return {
+            "image_path": str(output_path),
             "provider": "openrouter",
             "model": self.model,
             "endpoint": self.endpoint,
@@ -98,3 +101,31 @@ class OpenRouterImageClient:
                 if isinstance(item, dict) and item.get("b64_json"):
                     return str(item["b64_json"]), item.get("media_type")
         raise OpenRouterImageError("OpenRouter image response did not include b64_json data")
+
+
+def _resolved_output_path(output_path: Path, media_type: str | None, configured_format: str | None) -> Path:
+    extension = _output_extension(output_path, media_type, configured_format)
+    if output_path.suffix == extension:
+        return output_path
+    return output_path.with_suffix(extension)
+
+
+def _output_extension(output_path: Path, media_type: str | None, configured_format: str | None) -> str:
+    if media_type:
+        preferred = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/gif": ".gif",
+            "image/svg+xml": ".svg",
+        }.get(media_type)
+        if preferred:
+            return preferred
+        guessed = mimetypes.guess_extension(media_type, strict=False)
+        if guessed:
+            return guessed
+    if configured_format:
+        return "." + str(configured_format).lstrip(".")
+    if output_path.suffix:
+        return output_path.suffix
+    return ".bin"
