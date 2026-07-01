@@ -25,7 +25,15 @@
       "additionalProperties": true
     },
     "config": {"type": "object"},
-    "runtime": {"type": "object"},
+    "runtime": {
+      "type": "object",
+      "required": ["seeds", "deterministic"],
+      "properties": {
+        "seeds": {"type": "array", "items": {"type": "integer"}},
+        "deterministic": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
     "metrics": {
       "type": "object",
       "required": [
@@ -36,11 +44,79 @@
         "ia_score",
         "context_gap_score",
         "trace_validity",
-        "latency_ms"
+        "latency_ms",
+        "failed_generations"
       ],
+      "properties": {
+        "total_cases": {"type": "integer"},
+        "completed_cases": {"type": "integer"},
+        "checklist_accuracy": {"type": "number"},
+        "pass_rate": {"type": "number"},
+        "ia_score": {"type": "number"},
+        "context_gap_score": {"type": "number"},
+        "trace_validity": {"type": "number"},
+        "latency_ms": {"type": "number"},
+        "cost_usd": {"type": "number"},
+        "generation_cost_usd": {"type": "number"},
+        "judge_cost_usd": {"type": "number"},
+        "failed_generations": {"type": "integer"},
+        "by_capability": {"type": "object"}
+      },
       "additionalProperties": true
     },
-    "cases": {"type": "array"}
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "run_id", "capability", "seed", "output", "evaluation"],
+        "properties": {
+          "case_id": {"type": "string"},
+          "run_id": {"type": "string"},
+          "capability": {"type": "string"},
+          "seed": {"type": "integer"},
+          "output": {
+            "type": "object",
+            "required": ["metadata"],
+            "properties": {
+              "image_path": {"type": "string"},
+              "trace_path": {"type": "string"},
+              "log_path": {"type": "string"},
+              "metadata": {"type": "object"}
+            },
+            "additionalProperties": true
+          },
+          "evaluation": {
+            "type": "object",
+            "required": ["case_id", "capability", "trace_valid", "image_valid", "checks", "passed"],
+            "properties": {
+              "case_id": {"type": "string"},
+              "capability": {"type": "string"},
+              "trace_valid": {"type": "boolean"},
+              "image_valid": {"type": "boolean"},
+              "passed": {"type": "boolean"},
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["index", "type", "passed", "reason", "context_gap"],
+                  "properties": {
+                    "index": {"type": "integer"},
+                    "type": {"type": "string"},
+                    "passed": {"type": "boolean"},
+                    "reason": {"type": "string"},
+                    "context_gap": {"type": "boolean"},
+                    "provider": {"type": "string"}
+                  },
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "additionalProperties": true
 }

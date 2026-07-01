@@ -13,6 +13,14 @@ from jsonschema import Draft202012Validator
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _is_int(value: Any) -> bool:
+    return type(value) is int
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
@@ -99,6 +107,20 @@ def validate_config(config: dict[str, Any], config_path: str | Path) -> list[str
     seeds = runtime.get("seeds", [])
     if not isinstance(seeds, list) or not seeds:
         errors.append("runtime.seeds must be a non-empty list")
+    elif any(not _is_int(seed) for seed in seeds):
+        errors.append("runtime.seeds must contain only integers")
+
+    max_cases = suite.get("max_cases")
+    if max_cases is not None and (not _is_int(max_cases) or max_cases <= 0):
+        errors.append("suite.max_cases must be a positive integer")
+
+    timeout_seconds = runtime.get("timeout_seconds_per_case")
+    if timeout_seconds is not None and (not _is_int(timeout_seconds) or timeout_seconds <= 0):
+        errors.append("runtime.timeout_seconds_per_case must be a positive integer")
+
+    max_feedback_rounds = runtime.get("max_feedback_rounds")
+    if max_feedback_rounds is not None and (not _is_int(max_feedback_rounds) or max_feedback_rounds < 0):
+        errors.append("runtime.max_feedback_rounds must be a non-negative integer")
 
     if not errors:
         suite_path = resolve_suite_path(config, config_path)
@@ -130,15 +152,31 @@ def validate_config(config: dict[str, Any], config_path: str | Path) -> list[str
     for index, rule in enumerate(rules if isinstance(rules, list) else []):
         if "metric" not in rule:
             errors.append(f"acceptance.rules[{index}].metric is required")
+        elif not isinstance(rule.get("metric"), str):
+            errors.append(f"acceptance.rules[{index}].metric must be a string")
         if rule.get("mode") not in {"higher_is_better", "lower_is_better"}:
             errors.append(f"acceptance.rules[{index}].mode must be higher_is_better or lower_is_better")
+        for threshold_key in (
+            "min_absolute",
+            "max_absolute",
+            "min_delta_vs_baseline",
+            "max_regression_vs_baseline",
+            "max_ratio_vs_baseline",
+        ):
+            if threshold_key in rule and not _is_number(rule[threshold_key]):
+                errors.append(f"acceptance.rules[{index}].{threshold_key} must be numeric")
     return errors
 
 
 def validate_result_schema(result: dict[str, Any]) -> list[str]:
     schema = load_json(REPO_ROOT / "imagent_bench" / "schemas" / "result.schema.json")
     validator = Draft202012Validator(schema)
-    return [error.message for error in validator.iter_errors(result)]
+    errors = []
+    for error in validator.iter_errors(result):
+        path = ".".join(str(part) for part in error.path)
+        prefix = path or "$"
+        errors.append(f"{prefix}: {error.message}")
+    return errors
 
 
 def main() -> int:

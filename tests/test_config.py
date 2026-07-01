@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from imagent_bench.config import load_yaml, validate_config
+from imagent_bench.config import load_yaml, validate_config, validate_result_schema
+from imagent_bench.runner import run
 
 
 def test_local_smoke_config_is_valid() -> None:
@@ -78,3 +79,64 @@ metrics:
     errors = validate_config(load_yaml(config_path), config_path)
 
     assert "'expected' is a required property" in errors[0]
+
+
+def test_config_rejects_non_integer_seeds(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+suite:
+  id: ia_bench_v1
+runtime:
+  seeds: ["1001"]
+metrics:
+  primary: ia_score
+""",
+        encoding="utf-8",
+    )
+
+    errors = validate_config(load_yaml(path), path)
+
+    assert "runtime.seeds must contain only integers" in errors
+
+
+def test_config_rejects_non_numeric_acceptance_threshold(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+suite:
+  id: ia_bench_v1
+runtime:
+  seeds: [1001]
+metrics:
+  primary: ia_score
+acceptance:
+  rules:
+    - metric: ia_score
+      mode: higher_is_better
+      min_absolute: "fast"
+""",
+        encoding="utf-8",
+    )
+
+    errors = validate_config(load_yaml(path), path)
+
+    assert "acceptance.rules[0].min_absolute must be numeric" in errors
+
+
+def test_result_schema_rejects_non_numeric_metrics(tmp_path: Path) -> None:
+    result = run(Path("configs/local-smoke.yaml").resolve(), "tests/fixtures/echo_agent", tmp_path / "run")
+    result["metrics"]["ia_score"] = "1.0"
+
+    errors = validate_result_schema(result)
+
+    assert any("metrics.ia_score" in error for error in errors)
+
+
+def test_result_schema_rejects_malformed_case_entries(tmp_path: Path) -> None:
+    result = run(Path("configs/local-smoke.yaml").resolve(), "tests/fixtures/echo_agent", tmp_path / "run")
+    result["cases"][0].pop("evaluation")
+
+    errors = validate_result_schema(result)
+
+    assert any("cases.0" in error and "'evaluation' is a required property" in error for error in errors)
