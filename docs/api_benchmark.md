@@ -5,8 +5,9 @@ and evaluates generated images with the OpenAI image judge configured in
 `configs/api-gate.yaml`.
 
 The image judge provider is configurable. `configs/api-gate.yaml` uses the OpenAI
-judge and reads `OPENAI_API_KEY`. To judge through OpenRouter instead, set
-`evaluation.image_judge.provider: openrouter` and provide `OPENROUTER_API_KEY`;
+judge and reads `OPENAI_API_KEY`. To judge through OpenRouter instead, use the
+ready-made `configs/api-gate-openrouter.yaml` (or set
+`evaluation.image_judge.provider: openrouter`) and provide `OPENROUTER_API_KEY`;
 OpenRouter exposes many vision models through one Chat Completions endpoint.
 
 Configure the `benchmark-api` GitHub Environment with:
