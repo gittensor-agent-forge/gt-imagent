@@ -17,5 +17,7 @@ def test_runner_writes_valid_results(tmp_path: Path) -> None:
     assert result["metrics"]["failed_generations"] == 0
     assert result["metrics"]["total_cases"] == 6
     assert result["metrics"]["pass_rate"] == 1.0
+    assert "cost_usd" in result["metrics"]
+    assert result["metrics"]["judge_cost_usd"] == 0.0
     assert (tmp_path / "results.json").exists()
     assert (tmp_path / "summary.md").exists()
