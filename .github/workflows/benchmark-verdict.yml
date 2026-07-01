@@ -46,6 +46,11 @@ jobs:
               core.info(`Could not parse a PR number from artifact "${artifact.name}".`);
               return;
             }
+            const verdictKey = artifact.name.replace(/^benchmark-pr-\d+-/, "");
+            if (!["gated-pass", "gated-fail", "not-enforced"].includes(verdictKey)) {
+              core.info(`Artifact "${artifact.name}" does not encode a supported verdict.`);
+              return;
+            }
 
             // Bind the artifact-derived PR number to this run's head SHA. Without this,
             // a fork PR could upload a crafted artifact name to spoof a verdict onto a
@@ -67,19 +72,24 @@ jobs:
               return;
             }
 
-            const passed = run.conclusion === "success";
-            const addLabel = passed ? "benchmark-passed" : "benchmark-regression";
-            const removeLabel = passed ? "benchmark-regression" : "benchmark-passed";
             const common = { owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber };
 
-            try {
-              await github.rest.issues.removeLabel({ ...common, name: removeLabel });
-            } catch (error) {
-              core.info(`Label "${removeLabel}" not present; skipping removal.`);
+            for (const label of ["benchmark-passed", "benchmark-regression"]) {
+              try {
+                await github.rest.issues.removeLabel({ ...common, name: label });
+              } catch (error) {
+                core.info(`Label "${label}" not present; skipping removal.`);
+              }
             }
-            await github.rest.issues.addLabels({ ...common, labels: [addLabel] });
 
-            const body = passed
-              ? `✅ **Benchmark passed.** This pull request meets the gate in \`configs/pr-gate.yaml\` and is eligible to merge. [Run details](${run.html_url}).`
-              : `❌ **Benchmark regression.** This pull request did not pass the gate in \`configs/pr-gate.yaml\`. Review the [run details](${run.html_url}) and push a fix, or a maintainer will close it.`;
+            let body;
+            if (verdictKey === "gated-pass") {
+              await github.rest.issues.addLabels({ ...common, labels: ["benchmark-passed"] });
+              body = `✅ **Benchmark passed.** This pull request meets the gate in \`configs/pr-gate.yaml\` and is eligible to merge. [Run details](${run.html_url}).`;
+            } else if (verdictKey === "gated-fail") {
+              await github.rest.issues.addLabels({ ...common, labels: ["benchmark-regression"] });
+              body = `❌ **Benchmark regression.** This pull request did not pass the gate in \`configs/pr-gate.yaml\`. Review the [run details](${run.html_url}) and push a fix, or a maintainer will close it.`;
+            } else {
+              body = `ℹ️ **Benchmark ran without an enforced gate.** No files under \`agents/openrouter_baseline/\` changed, so the benchmark ran for visibility only. [Run details](${run.html_url}).`;
+            }
             await github.rest.issues.createComment({ ...common, body });

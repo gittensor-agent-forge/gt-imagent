@@ -100,10 +100,27 @@ jobs:
             echo "The benchmark ran for this PR, but the improvement gate was not enforced because no OpenRouter baseline agent files changed."
           } > results/comparison.md
 
+      - name: Classify benchmark verdict
+        if: always()
+        id: verdict
+        working-directory: base
+        env:
+          ENFORCE_IMPROVEMENT: ${{ steps.changes.outputs.enforce_improvement }}
+        run: |
+          if [ "$ENFORCE_IMPROVEMENT" = "true" ]; then
+            if [ -f ../results/comparison.json ] && [ "$(jq -r '.accepted' ../results/comparison.json)" = "true" ]; then
+              echo "artifact_suffix=gated-pass" >> "$GITHUB_OUTPUT"
+            else
+              echo "artifact_suffix=gated-fail" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "artifact_suffix=not-enforced" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-pr-${{ github.event.pull_request.number }}
+          name: benchmark-pr-${{ github.event.pull_request.number }}-${{ steps.verdict.outputs.artifact_suffix }}
           path: results/
           retention-days: 30
