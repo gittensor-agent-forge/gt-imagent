@@ -9,7 +9,7 @@ import pytest
 import agent.agent as agent_module
 from agent import ImageAgent
 from agent.image_backend_api import ImageBackendClient
-from agent.verifier import MockTextVerifier
+from agent.verifier import MockTextVerifier, OpenRouterVisionVerifier, build_image_verifier
 
 
 class _DummyVerifier:
@@ -49,6 +49,13 @@ def _setup_agent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, max_feedbac
     agent = ImageAgent()
     agent.setup(_mock_config(max_feedback_rounds=max_feedback_rounds, mode=mode), tmp_path)
     return agent
+
+
+def test_image_agent_setup_rejects_unknown_image_backend_mode(tmp_path: Path) -> None:
+    agent = ImageAgent()
+
+    with pytest.raises(ValueError, match="unsupported image backend mode"):
+        agent.setup(_mock_config(mode="liv"), tmp_path)
 
 
 def test_image_agent_mock_generate_writes_svg_and_trace(
@@ -361,6 +368,16 @@ def test_image_agent_revises_after_round_zero_failure(
     assert len(trace["feedback_attempts"]) == 4
     assert sum(1 for attempt in trace["feedback_attempts"] if attempt["selected"]) == 1
     assert "PASS" in trace["final_generation_context"]["prompt"]
+
+
+def test_build_image_verifier_normalizes_live_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    verifier = build_image_verifier({"agent": {"image_backend": {"mode": " LIVE "}}}, tmp_path)
+
+    assert isinstance(verifier, OpenRouterVisionVerifier)
 
 
 def test_image_agent_live_requires_api_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
