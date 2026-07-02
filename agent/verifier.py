@@ -109,15 +109,7 @@ class OpenRouterVisionVerifier:
         self.total_cost_usd += float(usage.get("cost") or 0.0)
 
         parsed = self._parse_response(response)
-        by_value = {
-            str(item.get("value", "")): {
-                "passed": bool(item.get("passed")),
-                "reason": str(item.get("reason", "")).strip() or "no reason provided",
-                "provider": self.provider,
-            }
-            for item in parsed
-            if isinstance(item, dict)
-        }
+        by_value = {value: verdict for value, verdict in (self._parse_check(item) for item in parsed) if value}
 
         verdicts: dict[int, dict[str, Any]] = {}
         for index, value in enumerate(values):
@@ -130,6 +122,20 @@ class OpenRouterVisionVerifier:
                 },
             )
         return verdicts
+
+    def _parse_check(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        value = str(item.get("value", "")).strip()
+        passed = item.get("passed")
+        if type(passed) is not bool:
+            raise ImageVerificationError("image verifier check.passed must be a boolean")
+        return (
+            value,
+            {
+                "passed": passed,
+                "reason": str(item.get("reason", "")).strip() or "no reason provided",
+                "provider": self.provider,
+            },
+        )
 
     def _payload(self, image_path: Path, values: list[str]) -> dict[str, Any]:
         media_type = mimetypes.guess_type(image_path.name, strict=False)[0] or "application/octet-stream"
