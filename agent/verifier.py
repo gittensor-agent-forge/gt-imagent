@@ -205,7 +205,7 @@ def build_image_verifier(config: dict[str, Any], workdir: Path) -> MockTextVerif
     provider = verifier_config.get("provider")
     if not provider:
         image_backend = agent_config.get("image_backend", {}) if isinstance(agent_config, dict) else {}
-        mode = str(image_backend.get("mode", "mock"))
+        mode = str(image_backend.get("mode", "mock")).strip().lower()
         provider = "openrouter_vision" if mode == "live" else "mock_text"
 
     normalized = str(provider)

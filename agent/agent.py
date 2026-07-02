@@ -30,7 +30,10 @@ class ImageAgent(GroundingMixin, GenerationMixin, RenderingMixin):
         runtime = config.get("runtime", {})
         self.max_feedback_rounds = int(runtime.get("max_feedback_rounds", 1))
         image_config = config.get("agent", {}).get("image_backend", {})
-        self.mode = str(image_config.get("mode", "mock"))
+        mode = str(image_config.get("mode", "mock")).strip().lower()
+        if mode not in {"mock", "live"}:
+            raise ValueError(f"unsupported image backend mode: {mode}")
+        self.mode = mode
         self.image_config = image_config
         self.client = ImageBackendClient(image_config) if self.mode == "live" else None
         self.verifier = build_image_verifier(config, self.workdir)
