@@ -386,6 +386,28 @@ def test_image_agent_memory_maps_visual_constraints(
     assert memory["unmapped"] == {"persona": "ignored"}
 
 
+def test_image_agent_does_not_treat_preferred_style_as_visible_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    agent = _setup_agent(monkeypatch, tmp_path)
+    case = {
+        "capability": "memory",
+        "prompt": "Create a compact review card.",
+        "allowed_tools": ["memory"],
+        "memory": {
+            "preferred_label": "Signal Review",
+            "preferred_style": "minimal monochrome",
+        },
+    }
+
+    grounding = agent._build_grounding(case)
+    spec = agent._build_generation_spec(case, grounding)
+
+    assert spec["style"] == "minimal monochrome"
+    assert "minimal monochrome" not in spec["visible_text"]
+    assert "minimal monochrome" not in spec["must_include"]
+
+
 def test_image_agent_reason_normalizes_parenthesized_arithmetic(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -433,6 +455,42 @@ def test_image_agent_mock_svg_renders_spec_not_raw_prompt(
 
     assert "2 + 3 = 5" in image_text
     assert "Create a small educational card that shows the correct result of 2 + 3." not in image_text
+
+
+def test_image_agent_mock_svg_does_not_render_style_label(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    agent = _setup_agent(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        agent,
+        "_score_candidate",
+        lambda case, output_dir, candidate, spec: {
+            "score": 1.0 if candidate["candidate_index"] == 0 else 0.0,
+            "passed": True,
+            "failed_checks": [],
+            "critique": [],
+            "cost_usd": 0.0,
+        },
+    )
+    output = agent.generate(
+        {
+            "run_id": "memory-style-001--seed-1001",
+            "capability": "memory",
+            "prompt": "Create a compact review card.",
+            "seed": 1001,
+            "allowed_tools": ["memory"],
+            "memory": {
+                "preferred_label": "Signal Review",
+                "preferred_style": "minimal monochrome",
+            },
+        },
+        tmp_path,
+    )
+    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
+
+    assert "Signal Review" in image_text
+    assert "Style: minimal monochrome" not in image_text
+    assert "minimal monochrome" not in image_text
 
 
 def test_image_agent_selects_second_candidate_without_revision(

@@ -68,8 +68,6 @@ class GroundingMixin:
             visible_text.append(str(reasoning_entry["display"]))
         if capability == "search":
             visible_text.extend(grounded_facts[:3])
-        if memory_entry.get("mapped_style"):
-            visible_text.append(str(memory_entry["mapped_style"]))
         if "PASS" in prompt.upper():
             visible_text.append("PASS")
 
@@ -84,8 +82,6 @@ class GroundingMixin:
                 must_include.append(str(search_entries[0].get("title", title)))
             if any("context gap" in fact.lower() for fact in grounded_facts):
                 must_include.append("context gap")
-        if memory_entry.get("mapped_style"):
-            must_include.append(str(memory_entry["mapped_style"]))
         if "PASS" in prompt.upper():
             must_include.append("PASS")
 
