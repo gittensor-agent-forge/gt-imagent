@@ -7,17 +7,13 @@ from typing import Any
 
 try:
     from .common import dedupe_strings
-    from .constants import DEFAULT_STYLE
 except ImportError:  # pragma: no cover - manifest loader imports modules outside a package
     from common import dedupe_strings
-    from constants import DEFAULT_STYLE
 
 
 class RenderingMixin:
     def _render_body_lines(self, spec: dict[str, Any]) -> list[str]:
         lines: list[str] = []
-        if spec["style"] != DEFAULT_STYLE:
-            lines.append(f"Style: {spec['style']}")
         reasoning = spec.get("reasoning_result", {})
         if reasoning.get("display"):
             lines.append(str(reasoning["display"]))
