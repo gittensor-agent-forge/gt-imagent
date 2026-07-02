@@ -9,7 +9,12 @@ import pytest
 import agent.agent as agent_module
 from agent import ImageAgent
 from agent.image_backend_api import ImageBackendClient
-from agent.verifier import MockTextVerifier, OpenRouterVisionVerifier, build_image_verifier
+from agent.verifier import (
+    ImageVerificationError,
+    MockTextVerifier,
+    OpenRouterVisionVerifier,
+    build_image_verifier,
+)
 
 
 class _DummyVerifier:
@@ -567,6 +572,39 @@ def test_image_agent_raises_when_all_candidates_fail(
 
     with pytest.raises(RuntimeError, match="agent did not produce a usable image: backend timeout"):
         agent.generate(_feedback_case(), tmp_path)
+
+
+def test_openrouter_verifier_rejects_non_boolean_passed_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    verifier = OpenRouterVisionVerifier({}, tmp_path)
+    image_path = tmp_path / "image.svg"
+    image_path.write_text("<svg><text>PASS</text></svg>", encoding="utf-8")
+
+    monkeypatch.setattr(
+        verifier,
+        "_post_json",
+        lambda payload: {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"checks": [{"value": "PASS", "passed": "false", "reason": "bad type"}]}
+                        )
+                    }
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(ImageVerificationError, match="must be a boolean"):
+        verifier.evaluate_image_checks(
+            {"id": "case-1", "prompt": "Create PASS."},
+            {"image_path": str(image_path)},
+            {},
+            [{"type": "image_contains", "value": "PASS"}],
+        )
 
 
 def test_build_image_verifier_normalizes_live_mode(
