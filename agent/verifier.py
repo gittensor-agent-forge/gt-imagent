@@ -7,6 +7,7 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +47,30 @@ class MockTextVerifier:
     def _read_text(self, image_path: Path) -> str:
         if not image_path.exists():
             return ""
-        if image_path.suffix.lower() in {".svg", ".txt", ".json", ".html", ".xml"}:
-            return html.unescape(image_path.read_text(encoding="utf-8", errors="ignore"))
-        return image_path.read_text(encoding="utf-8", errors="ignore")
+        if image_path.suffix.lower() == ".svg":
+            return self._read_svg_visible_text(image_path)
+        if image_path.suffix.lower() == ".txt":
+            return image_path.read_text(encoding="utf-8", errors="ignore")
+        return ""
+
+    def _read_svg_visible_text(self, image_path: Path) -> str:
+        try:
+            root = ET.fromstring(image_path.read_text(encoding="utf-8", errors="ignore"))
+        except ET.ParseError:
+            return ""
+        lines: list[str] = []
+        for element in root.iter():
+            if self._svg_local_name(element.tag) != "text":
+                continue
+            text = "".join(element.itertext()).strip()
+            if text:
+                lines.append(html.unescape(text))
+        return "\n".join(lines)
+
+    def _svg_local_name(self, tag: str) -> str:
+        if "}" in tag:
+            return tag.rsplit("}", 1)[1]
+        return tag
 
 
 class OpenRouterVisionVerifier:

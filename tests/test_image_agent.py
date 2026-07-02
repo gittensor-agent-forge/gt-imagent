@@ -116,6 +116,21 @@ def test_mock_text_verifier_checks_visible_svg_text(tmp_path: Path) -> None:
     assert verdicts[1]["passed"] is False
 
 
+def test_mock_text_verifier_ignores_non_visible_svg_attributes(tmp_path: Path) -> None:
+    image_path = tmp_path / "card.svg"
+    image_path.write_text('<svg aria-label="PASS"><title>PASS</title></svg>', encoding="utf-8")
+    verifier = MockTextVerifier({}, tmp_path)
+
+    verdicts = verifier.evaluate_image_checks(
+        {"id": "case-1"},
+        {"image_path": str(image_path)},
+        {},
+        [{"type": "image_contains", "value": "PASS"}],
+    )
+
+    assert verdicts[0]["passed"] is False
+
+
 def test_image_agent_builds_structured_spec_for_plan_case(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
