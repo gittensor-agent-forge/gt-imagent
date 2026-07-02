@@ -1,34 +1,39 @@
 from __future__ import annotations
 
-import html
-import json
-import re
+import copy
 import time
 from pathlib import Path
 from typing import Any
 
 try:
+    from .common import relative_to_output
+    from .generation import GenerationMixin
+    from .grounding import GroundingMixin
     from .image_backend_api import ImageBackendClient
+    from .rendering import RenderingMixin
+    from .verifier import build_image_verifier
 except ImportError:  # pragma: no cover - manifest loader imports this module outside a package
+    from common import relative_to_output
+    from generation import GenerationMixin
+    from grounding import GroundingMixin
     from image_backend_api import ImageBackendClient
+    from rendering import RenderingMixin
+    from verifier import build_image_verifier
 
 
-class ImageAgent:
-    """General image agent with an offline mock mode and a live backend mode.
-
-    In mock mode it writes a deterministic SVG so the offline suite runs without
-    credentials. In live mode it generates an image through the configured backend
-    and records the real ``cost_usd`` reported by the gateway.
-    """
+class ImageAgent(GroundingMixin, GenerationMixin, RenderingMixin):
+    """General image agent with a structured planning and verification loop."""
 
     def setup(self, config: dict[str, Any], workdir: Path) -> None:
         self.config = config
         self.workdir = Path(workdir)
-        self.max_feedback_rounds = int(config.get("runtime", {}).get("max_feedback_rounds", 1))
+        runtime = config.get("runtime", {})
+        self.max_feedback_rounds = int(runtime.get("max_feedback_rounds", 1))
         image_config = config.get("agent", {}).get("image_backend", {})
         self.mode = str(image_config.get("mode", "mock"))
         self.image_config = image_config
         self.client = ImageBackendClient(image_config) if self.mode == "live" else None
+        self.verifier = build_image_verifier(config, self.workdir)
 
     def generate(self, case: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         started = time.perf_counter()
@@ -39,189 +44,141 @@ class ImageAgent:
         traces_dir.mkdir(parents=True, exist_ok=True)
 
         run_id = case["run_id"]
-        capability = case.get("capability", "unknown")
-        prompt = case["prompt"]
         seed = int(case.get("seed", 0))
-
-        grounding = {
-            "reason": self._reason(case),
-            "search": self._search(case),
-            "memory": self._memory(case),
-        }
-        final_prompt = self._final_prompt(prompt, case, grounding)
-        feedback = self._feedback(case, final_prompt)
-        if feedback:
-            final_prompt = f"{final_prompt} | verified revision: {feedback[-1]['revision']}"
-
-        image_format = "png" if self.mode == "live" else "svg"
-        image_path = images_dir / f"{run_id}.{image_format}"
-        trace = {
-            "planning": {
-                "missing_context": self._missing_context(case),
-                "content_plan": self._content_plan(case),
-                "generation_plan": {
-                    "outputs": 1,
-                    "format": image_format,
-                    "seed": seed,
-                    "generator": "live-image-backend" if self.mode == "live" else "mock-svg",
+        grounding_bundle = self._build_grounding_bundle(case)
+        grounding = grounding_bundle.grounding
+        tool_calls = list(grounding_bundle.tool_calls)
+        initial_spec = self._build_generation_spec(case, grounding)
+        tool_calls.append(
+            {
+                "tool": "planner",
+                "arguments": {
+                    "capability": str(case.get("capability", "unknown")),
+                    "prompt": str(case.get("prompt", "")),
                 },
-            },
-            "grounding": grounding,
-            "final_generation_context": {
-                "prompt": final_prompt,
-            },
-            "feedback": feedback,
-        }
-
-        trace_path = traces_dir / f"{run_id}.json"
-        self._write_json(trace_path, trace)
-
-        if self.mode == "live":
-            if self.client is None:
-                raise RuntimeError("image backend client was not initialized")
-            generation_metadata = self.client.generate(final_prompt, seed, image_path)
-            image_path = Path(generation_metadata["image_path"])
-            trace["planning"]["generation_plan"]["format"] = image_path.suffix.lstrip(".")
-            self._write_json(trace_path, trace)
-        else:
-            self._write_svg(image_path, case, final_prompt, capability)
-            generation_metadata = {
-                "image_path": str(image_path),
-                "provider": "mock",
-                "model": "deterministic-image-agent-baseline",
+                "result_count": 1,
+                "result": {
+                    "title": initial_spec["title"],
+                    "layout": initial_spec["layout"],
+                    "must_include_count": len(initial_spec["must_include"]),
+                },
             }
+        )
 
-        return {
-            "image_path": str(image_path),
-            "trace_path": str(trace_path),
-            "metadata": {
-                "agent_id": "image-agent",
-                "seed": seed,
-                "model": generation_metadata.get("model"),
-                "provider": generation_metadata.get("provider"),
-                "usage": generation_metadata.get("usage", {}),
-                "cost_usd": float(generation_metadata.get("cost_usd", 0.0) or 0.0),
-                "latency_ms": round((time.perf_counter() - started) * 1000, 3),
-            },
-        }
+        feedback_entries: list[dict[str, Any]] = []
+        feedback_attempts: list[dict[str, Any]] = []
+        selected_candidate: dict[str, Any] | None = None
+        selected_spec = copy.deepcopy(initial_spec)
+        working_spec = copy.deepcopy(initial_spec)
+        total_generation_cost = 0.0
+        total_verifier_cost = 0.0
+        total_candidates = 0
+        round_count = 1 if self.max_feedback_rounds <= 0 else 2
 
-    def _missing_context(self, case: dict[str, Any]) -> list[str]:
-        return {
-            "plan": ["layout details", "section ordering", "visual hierarchy"],
-            "reason": ["derived answer", "calculation steps"],
-            "search": ["frozen factual reference", "source facts"],
-            "memory": ["user preference", "saved style"],
-            "feedback": ["verification target", "exact output constraints"],
-        }.get(case.get("capability"), ["generation context"])
+        for round_index in range(round_count):
+            candidates: list[dict[str, Any]] = []
+            for candidate_index, candidate_seed in enumerate(self._candidate_seeds(seed, round_index)):
+                variant = self._candidate_variant(round_index, candidate_index)
+                candidate = self._generate_candidate(
+                    case=case,
+                    output_dir=output_dir,
+                    run_id=run_id,
+                    seed=candidate_seed,
+                    round_index=round_index,
+                    candidate_index=candidate_index,
+                    spec=working_spec,
+                    variant=variant,
+                    grounding=grounding,
+                    tool_calls=tool_calls,
+                )
+                total_generation_cost += float(candidate["metadata"].get("cost_usd", 0.0) or 0.0)
+                verification = self._score_candidate(case, output_dir, candidate, working_spec)
+                total_verifier_cost += float(verification["cost_usd"])
+                candidate.update(verification)
+                candidates.append(candidate)
+                total_candidates += 1
+                feedback_attempts.append(
+                    {
+                        "round": round_index,
+                        "candidate_index": candidate_index,
+                        "candidate_image_path": relative_to_output(candidate["image_path"], output_dir),
+                        "candidate_prompt": candidate["prompt"],
+                        "score": round(float(candidate["score"]), 6),
+                        "failed_checks": list(candidate["failed_checks"]),
+                        "critique": list(candidate["critique"]),
+                        "selected": False,
+                    }
+                )
 
-    def _content_plan(self, case: dict[str, Any]) -> dict[str, Any]:
-        prompt = case["prompt"].lower()
-        if "three-panel" in prompt or "three panel" in prompt:
-            layout = "three-panel horizontal layout"
-        elif "badge" in prompt:
-            layout = "compact badge"
-        else:
-            layout = "single-card layout"
-        return {
-            "layout": layout,
-            "style": "clean deterministic vector rendering",
-            "text_policy": "preserve required visible labels exactly",
-        }
-
-    def _reason(self, case: dict[str, Any]) -> list[dict[str, str]]:
-        if "reason" not in case.get("allowed_tools", []):
-            return []
-        prompt = case["prompt"]
-        match = re.search(r"(\d+)\s*([+*])\s*(\d+)", prompt)
-        if not match:
-            return [{"type": "reasoning", "input": prompt, "result": "no arithmetic expression found"}]
-        left, operator, right = int(match.group(1)), match.group(2), int(match.group(3))
-        result = left + right if operator == "+" else left * right
-        return [{"type": "arithmetic", "expression": f"{left} {operator} {right}", "result": str(result)}]
-
-    def _search(self, case: dict[str, Any]) -> list[dict[str, Any]]:
-        if "search" not in case.get("allowed_tools", []):
-            return []
-        results = []
-        for snapshot in case.get("search_snapshots", []):
-            path = Path(snapshot)
-            data = json.loads(path.read_text(encoding="utf-8"))
-            results.append(
+            best = max(
+                candidates,
+                key=lambda item: (
+                    float(item["score"]),
+                    -float(item["metadata"].get("latency_ms", 0.0) or 0.0),
+                    -int(item["candidate_index"]),
+                ),
+            )
+            feedback_entries.append(
                 {
-                    "query": case["prompt"],
-                    "source": str(path),
-                    "title": data.get("title"),
-                    "facts": data.get("facts", []),
+                    "round": round_index,
+                    "candidate_index": best["candidate_index"],
+                    "candidate_image_path": relative_to_output(best["image_path"], output_dir),
+                    "candidate_prompt": best["prompt"],
+                    "score": round(float(best["score"]), 6),
+                    "failed_checks": list(best["failed_checks"]),
+                    "critique": list(best["critique"]),
+                    "selected": False,
                 }
             )
-        return results
 
-    def _memory(self, case: dict[str, Any]) -> list[dict[str, Any]]:
-        if "memory" not in case.get("allowed_tools", []):
-            return []
-        memory = case.get("memory", {})
-        if not memory:
-            return []
-        return [{"type": "user_profile", "values": memory}]
+            selected_candidate = best
+            selected_spec = copy.deepcopy(working_spec)
+            if best["passed"] or round_index == round_count - 1:
+                break
+            working_spec = self._revise_spec(working_spec, best["failed_checks"])
 
-    def _feedback(self, case: dict[str, Any], final_prompt: str) -> list[dict[str, Any]]:
-        if "feedback" not in case.get("allowed_tools", []):
-            return []
-        if self.max_feedback_rounds <= 0:
-            return []
-        wants_pass = "PASS" in case["prompt"]
-        if wants_pass and "PASS" not in final_prompt:
-            return [
-                {
-                    "attempt": 1,
-                    "failed_checks": ["missing exact label PASS"],
-                    "revision": "Add exact visible label PASS",
-                }
-            ]
-        return [
-            {
-                "attempt": 1,
-                "failed_checks": [],
-                "revision": "Verified exact visible label PASS",
-            }
-        ]
+        if selected_candidate is None:
+            raise RuntimeError("agent did not produce any candidate")
 
-    def _final_prompt(self, prompt: str, case: dict[str, Any], grounding: dict[str, Any]) -> str:
-        parts = [prompt]
-        if case.get("capability") == "plan":
-            parts.append("Use a three-panel layout for Context Gap Toolkit: Plan, Ground, Verify.")
-        for item in grounding.get("reason", []):
-            if item.get("result"):
-                parts.append(f"Reasoned answer: {item['result']}.")
-        for item in grounding.get("search", []):
-            title = item.get("title")
-            facts = " ".join(item.get("facts", []))
-            parts.append(f"Frozen search facts for {title}: {facts}")
-        for item in grounding.get("memory", []):
-            values = item.get("values", {})
-            for key, value in values.items():
-                parts.append(f"Memory {key}: {value}.")
-        if "PASS" in prompt:
-            parts.append("Visible label: PASS.")
-        return " ".join(parts)
+        feedback_entries[-1]["selected"] = True
+        for attempt in feedback_attempts:
+            if (
+                int(attempt["round"]) == int(selected_candidate["round"])
+                and int(attempt["candidate_index"]) == int(selected_candidate["candidate_index"])
+            ):
+                attempt["selected"] = True
+                break
+        final_image_path = self._promote_winner(selected_candidate["image_path"], output_dir / "images", run_id)
+        final_trace_path = traces_dir / f"{run_id}.json"
+        trace = self._build_trace(
+            case=case,
+            base_seed=seed,
+            output_dir=output_dir,
+            final_image_path=final_image_path,
+            grounding=grounding,
+            tool_calls=tool_calls,
+            generation_spec=selected_spec,
+            final_prompt=selected_candidate["prompt"],
+            feedback=feedback_entries,
+            feedback_attempts=feedback_attempts,
+            candidate_count=total_candidates,
+            round_count=len(feedback_entries),
+            selected_candidate=selected_candidate,
+        )
+        self._write_json(final_trace_path, trace)
 
-    def _write_svg(self, path: Path, case: dict[str, Any], final_prompt: str, capability: str) -> None:
-        title = html.escape(case.get("memory", {}).get("preferred_label", "Context Gap Toolkit"))
-        prompt = html.escape(final_prompt)
-        capability_text = html.escape(capability.upper())
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" role="img" aria-label="{title}">
-  <rect width="960" height="540" fill="#f8fafc"/>
-  <rect x="36" y="36" width="888" height="468" rx="8" fill="#ffffff" stroke="#111827" stroke-width="3"/>
-  <text x="72" y="108" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111827">{title}</text>
-  <text x="72" y="164" font-family="Arial, sans-serif" font-size="24" fill="#2563eb">{capability_text}</text>
-  <foreignObject x="72" y="198" width="816" height="250">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 24px; color: #111827; line-height: 1.35;">{prompt}</div>
-  </foreignObject>
-</svg>
-"""
-        path.write_text(svg, encoding="utf-8")
+        selected_metadata = dict(selected_candidate["metadata"])
+        selected_metadata["cost_usd"] = round(total_generation_cost + total_verifier_cost, 6)
+        selected_metadata["generation_cost_usd"] = round(total_generation_cost, 6)
+        selected_metadata["internal_judge_cost_usd"] = round(total_verifier_cost, 6)
+        selected_metadata["candidate_count"] = total_candidates
+        selected_metadata["selected_candidate_index"] = int(selected_candidate["candidate_index"])
+        selected_metadata["latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
+        selected_metadata["agent_id"] = "image-agent"
+        selected_metadata["seed"] = seed
 
-    def _write_json(self, path: Path, data: Any) -> None:
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+        return {
+            "image_path": str(final_image_path),
+            "trace_path": str(final_trace_path),
+            "metadata": selected_metadata,
+        }
