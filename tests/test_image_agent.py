@@ -1,945 +1,261 @@
 from __future__ import annotations
 
-import base64
 import json
+import os
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
-import agent.agent as agent_module
-from agent import ImageAgent
-from agent.image_backend_api import ImageBackendClient, _output_extension
-from agent.verifier import (
-    ImageVerificationError,
-    MockTextVerifier,
-    OpenRouterVisionVerifier,
-    build_image_verifier,
-)
+from agent.agent import ImageAgent
 
 
-class _DummyVerifier:
-    total_cost_usd = 0.0
-
-    def evaluate_image_checks(self, case, output, trace, checks):  # noqa: D401, ANN001
-        return {
-            index: {"passed": True, "reason": "ok", "provider": "mock_text"}
-            for index, _check in enumerate(checks)
-        }
-
-
-def _mock_config(*, max_feedback_rounds: int = 1, mode: str = "mock") -> dict:
-    return {
-        "runtime": {"max_feedback_rounds": max_feedback_rounds},
-        "agent": {"image_backend": {"mode": mode}},
-        "evaluation": {"image_judge": {"provider": "mock_text"}},
-    }
-
-
-def _feedback_case(seed: int = 1001) -> dict:
-    return {
-        "run_id": f"feedback-label-001--seed-{seed}",
-        "capability": "feedback",
-        "prompt": "Create a validation badge with the exact label PASS.",
-        "seed": seed,
-        "allowed_tools": ["feedback"],
-    }
-
-
-def _setup_agent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, max_feedback_rounds: int = 1, mode: str = "mock") -> ImageAgent:
-    monkeypatch.setattr(
-        agent_module,
-        "build_image_verifier",
-        lambda config, workdir: _DummyVerifier(),
-    )
+def _setup_agent(tmp_path: Path) -> ImageAgent:
     agent = ImageAgent()
-    agent.setup(_mock_config(max_feedback_rounds=max_feedback_rounds, mode=mode), tmp_path)
+    agent.setup({"agent": {"image_backend": {"mode": "mock"}}}, tmp_path)
     return agent
 
 
-def test_image_agent_setup_rejects_unknown_image_backend_mode(tmp_path: Path) -> None:
-    agent = ImageAgent()
-
-    with pytest.raises(ValueError, match="unsupported image backend mode"):
-        agent.setup(_mock_config(mode="liv"), tmp_path)
-
-
-def test_image_backend_client_supports_url_image_responses(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    captured_payload = {}
-    monkeypatch.setenv("ZAI_API_KEY", "test-key")
-    client = ImageBackendClient(
-        {
-            "provider": "zai",
-            "api_key_env": "ZAI_API_KEY",
-            "endpoint": "https://api.z.ai/api/paas/v4/images/generations",
-            "model": "glm-image",
-            "size": "1024x1024",
-            "quality": "standard",
-            "output_format": "png",
-            "send_seed": False,
-            "send_output_format": False,
-        }
-    )
-
-    def fake_post_json(payload):  # noqa: ANN001
-        captured_payload.update(payload)
-        return {"data": [{"url": "https://example.test/generated.png"}]}
-
-    monkeypatch.setattr(client, "_post_json", fake_post_json)
-    monkeypatch.setattr(client, "_download_image", lambda url: (b"image-bytes", "image/png"))
-
-    result = client.generate("Create a small poster.", 1234, tmp_path / "output.bin")
-
-    assert Path(result["image_path"]).read_bytes() == b"image-bytes"
-    assert result["provider"] == "zai"
-    assert result["media_type"] == "image/png"
-    assert captured_payload["model"] == "glm-image"
-    assert captured_payload["quality"] == "standard"
-    assert "seed" not in captured_payload
-    assert "output_format" not in captured_payload
-
-
-def test_image_agent_allows_single_candidate_for_live_smoke(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    assert agent._candidate_seeds(100, 0) == [100, 101]
-
-    agent.setup(
-        {
-            "runtime": {"candidates_per_round": 1},
-            "agent": {"image_backend": {"mode": "mock"}},
-            "evaluation": {"image_judge": {"provider": "mock_text"}},
-        },
-        tmp_path,
-    )
-
-    assert agent._candidate_seeds(100, 0) == [100]
-
-
-def test_image_agent_mock_generate_writes_svg_and_trace(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        agent,
-        "_score_candidate",
-        lambda case, output_dir, candidate, spec: {
-            "score": 1.0 if candidate["candidate_index"] == 0 else 0.0,
-            "passed": True,
-            "failed_checks": [],
-            "critique": [],
-            "cost_usd": 0.0,
-        },
-    )
+def test_base_agent_writes_svg_and_trace(tmp_path: Path) -> None:
+    agent = _setup_agent(tmp_path)
 
     output = agent.generate(
         {
-            "run_id": "plan-layout-001--seed-1001",
+            "run_id": "plan-layout",
             "capability": "plan",
             "prompt": "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify.",
-            "seed": 1001,
             "allowed_tools": ["plan"],
         },
-        tmp_path,
+        tmp_path / "output",
     )
 
-    image_path = Path(output["image_path"])
-    trace_path = Path(output["trace_path"])
-    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
+    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
 
-    assert image_path.exists()
-    assert trace_path.exists()
-    assert output["metadata"]["provider"] == "mock"
-    assert output["metadata"]["image_path"] == output["image_path"]
-    assert trace["planning"]["generation_spec"]["title"] == "Context Gap Toolkit"
-    assert trace["planning"]["generation_plan"]["selected_candidate_index"] == 0
-    assert any(call["tool"] == "planner" for call in trace["tool_calls"])
+    assert "Context Gap Toolkit" in image_text
+    assert "Plan" in image_text
+    assert "Ground" in image_text
+    assert "Verify" in image_text
+    assert trace["agent"] == "base"
+    assert output["metadata"]["agent_id"] == "base-image-agent"
 
 
-def test_mock_text_verifier_checks_visible_svg_text(tmp_path: Path) -> None:
-    image_path = tmp_path / "card.svg"
-    image_path.write_text("<svg><text>PASS</text><text>Signal Review</text></svg>", encoding="utf-8")
-    verifier = MockTextVerifier({}, tmp_path)
-
-    verdicts = verifier.evaluate_image_checks(
-        {"id": "case-1"},
-        {"image_path": str(image_path)},
-        {},
-        [
-            {"type": "image_contains", "value": "PASS"},
-            {"type": "image_contains", "value": "MISSING"},
-        ],
-    )
-
-    assert verdicts[0]["passed"] is True
-    assert verdicts[1]["passed"] is False
-
-
-def test_mock_text_verifier_ignores_non_visible_svg_attributes(tmp_path: Path) -> None:
-    image_path = tmp_path / "card.svg"
-    image_path.write_text('<svg aria-label="PASS"><title>PASS</title></svg>', encoding="utf-8")
-    verifier = MockTextVerifier({}, tmp_path)
-
-    verdicts = verifier.evaluate_image_checks(
-        {"id": "case-1"},
-        {"image_path": str(image_path)},
-        {},
-        [{"type": "image_contains", "value": "PASS"}],
-    )
-
-    assert verdicts[0]["passed"] is False
-
-
-def test_mock_text_verifier_rejects_embedded_substring_matches(tmp_path: Path) -> None:
-    image_path = tmp_path / "card.svg"
-    image_path.write_text("<svg><text>BYPASS</text></svg>", encoding="utf-8")
-    verifier = MockTextVerifier({}, tmp_path)
-
-    verdicts = verifier.evaluate_image_checks(
-        {"id": "case-1"},
-        {"image_path": str(image_path)},
-        {},
-        [{"type": "image_contains", "value": "PASS"}],
-    )
-
-    assert verdicts[0]["passed"] is False
-
-
-def test_image_agent_builds_structured_spec_for_plan_case(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    case = {
-        "capability": "plan",
-        "prompt": "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify.",
-        "allowed_tools": ["plan"],
-    }
-
-    grounding = agent._build_grounding(case)
-    spec = agent._build_generation_spec(case, grounding)
-
-    assert spec["title"] == "Context Gap Toolkit"
-    assert spec["layout"] == "three_panel"
-    assert spec["must_include"][:4] == ["Context Gap Toolkit", "Plan", "Ground", "Verify"]
-    assert spec["visual_constraints"]["sections"] == ["Plan", "Ground", "Verify"]
-
-
-def test_image_agent_parses_common_title_and_section_shapes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    case = {
-        "capability": "plan",
-        "prompt": 'Create a three-panel infographic titled "Q3: Launch, Risks" with sections Plan, Ground, and Verify.',
-        "allowed_tools": ["plan"],
-    }
-
-    grounding = agent._build_grounding(case)
-    spec = agent._build_generation_spec(case, grounding)
-
-    assert spec["title"] == "Q3: Launch, Risks"
-    assert spec["visual_constraints"]["sections"] == ["Plan", "Ground", "Verify"]
-
-
-def test_image_agent_records_explicit_tool_calls(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_text(
-        json.dumps(
-            {
-                "title": "Image-Agent",
-                "facts": [
-                    "Image-Agent reduces the context gap through planning.",
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+def test_base_agent_uses_memory_asset_reasoning_and_search_context(tmp_path: Path) -> None:
     asset = tmp_path / "brief.json"
     asset.write_text(
         json.dumps(
             {
                 "title": "Launch Readiness Board",
-                "layout": "three_panel",
-                "required_text": ["Launch Readiness Board"],
-            }
-        ),
-        encoding="utf-8",
-    )
-    agent = _setup_agent(monkeypatch, tmp_path)
-    bundle = agent._build_grounding_bundle(
-        {
-            "capability": "search",
-            "prompt": "Create a search card about Image-Agent planning.",
-            "assets": [str(asset)],
-            "allowed_tools": ["search", "memory"],
-            "search_snapshots": [str(snapshot)],
-            "memory": {"preferred_label": "Signal Review"},
-        }
-    )
-
-    assert [call["tool"] for call in bundle.tool_calls] == ["asset", "search", "memory"]
-    assert bundle.tool_calls[0]["arguments"]["asset_count"] == 1
-    assert bundle.tool_calls[1]["arguments"]["snapshot_count"] == 1
-    assert bundle.tool_calls[2]["arguments"]["memory_keys"] == ["preferred_label"]
-
-
-def test_image_agent_builds_structured_spec_from_asset_brief(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    asset = tmp_path / "brief.json"
-    asset.write_text(
-        json.dumps(
-            {
-                "title": "Launch Readiness Board",
-                "layout": "three_panel",
                 "sections": ["Scope", "Risks", "Owners"],
                 "required_text": ["Launch Readiness Board", "Scope", "Risks", "Owners"],
-                "visual_constraints": {"density": "compact"},
             }
         ),
         encoding="utf-8",
     )
-    agent = _setup_agent(monkeypatch, tmp_path)
-    case = {
-        "capability": "plan",
-        "prompt": "Create a release-readiness board using the provided brief asset.",
-        "assets": [str(asset)],
-        "allowed_tools": ["plan"],
-    }
-
-    grounding = agent._build_grounding(case)
-    spec = agent._build_generation_spec(case, grounding)
-
-    assert grounding["asset"][0]["title"] == "Launch Readiness Board"
-    assert spec["title"] == "Launch Readiness Board"
-    assert spec["layout"] == "three_panel"
-    assert spec["must_include"][:4] == ["Launch Readiness Board", "Scope", "Risks", "Owners"]
-
-
-def test_image_agent_resolves_relative_asset_paths_from_workdir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    workdir = tmp_path / "workspace"
-    workdir.mkdir()
-    asset = workdir / "brief.json"
-    asset.write_text(
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(
         json.dumps(
             {
-                "title": "Launch Readiness Board",
-                "layout": "three_panel",
-                "required_text": ["Launch Readiness Board"],
+                "facts": [
+                    "Image-Agent reduces the context gap through planning.",
+                    "Unrelated fact.",
+                ]
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.chdir(tmp_path)
-    agent = _setup_agent(monkeypatch, workdir)
+    agent = _setup_agent(tmp_path)
 
-    grounding = agent._build_grounding(
+    output = agent.generate(
         {
-            "capability": "plan",
-            "prompt": "Create a release-readiness board using the provided brief asset.",
+            "run_id": "mixed-context",
+            "capability": "search",
+            "prompt": "Create a card that shows the correct result of (8 + 4) / 3 about Image-Agent context gap.",
+            "allowed_tools": ["reason", "search"],
             "assets": ["brief.json"],
-            "allowed_tools": ["plan"],
-        }
-    )
-
-    assert grounding["asset"][0]["title"] == "Launch Readiness Board"
-    assert grounding["asset"][0]["source"] == str(asset)
-
-
-def test_image_agent_rejects_asset_paths_outside_workdir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    workdir = tmp_path / "workspace"
-    workdir.mkdir()
-    outside = tmp_path / "secret.txt"
-    outside.write_text("SECRET\n", encoding="utf-8")
-    agent = _setup_agent(monkeypatch, workdir)
-
-    with pytest.raises(ValueError, match="escapes workdir"):
-        agent._assets({"assets": ["../secret.txt"]})
-
-
-def test_image_agent_rejects_malformed_json_asset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    asset = tmp_path / "bad.json"
-    asset.write_text("[1, 2, 3]", encoding="utf-8")
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    with pytest.raises(ValueError, match="asset JSON must be an object"):
-        agent._assets({"assets": ["bad.json"]})
-
-
-def test_image_agent_search_ranks_top_three_facts(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_text(
-        json.dumps(
-            {
-                "title": "Image-Agent",
-                "facts": [
-                    "Image-Agent reduces the context gap through planning.",
-                    "Planning improves the quality of structured image generation.",
-                    "Context gap mitigation benefits from grounded facts.",
-                    "Weather and bird migration are unrelated here.",
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    results = agent._search(
-        {
-            "capability": "search",
-            "prompt": "Create a research card about Image-Agent planning and context gap handling.",
-            "allowed_tools": ["search"],
-            "search_snapshots": [str(snapshot)],
-        }
-    )
-
-    assert len(results) == 3
-    assert results[0]["fact"] == "Image-Agent reduces the context gap through planning."
-    assert all("bird migration" not in item["fact"] for item in results)
-
-
-def test_image_agent_resolves_relative_search_snapshots_from_workdir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    workdir = tmp_path / "workspace"
-    workdir.mkdir()
-    snapshot = workdir / "snapshot.json"
-    snapshot.write_text(
-        json.dumps(
-            {
-                "title": "Image-Agent",
-                "facts": [
-                    "Image-Agent reduces the context gap through planning.",
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-    agent = _setup_agent(monkeypatch, workdir)
-
-    results = agent._search(
-        {
-            "capability": "search",
-            "prompt": "Create a research card about Image-Agent planning.",
-            "allowed_tools": ["search"],
             "search_snapshots": ["snapshot.json"],
-        }
-    )
-
-    assert len(results) == 1
-    assert results[0]["source"] == str(snapshot)
-
-
-def test_image_agent_rejects_search_snapshots_outside_workdir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    workdir = tmp_path / "workspace"
-    workdir.mkdir()
-    outside = tmp_path / "snapshot.json"
-    outside.write_text(json.dumps({"title": "Private", "facts": ["secret"]}), encoding="utf-8")
-    agent = _setup_agent(monkeypatch, workdir)
-
-    with pytest.raises(ValueError, match="escapes workdir"):
-        agent._search(
-            {
-                "capability": "search",
-                "prompt": "Create a private card.",
-                "allowed_tools": ["search"],
-                "search_snapshots": ["../snapshot.json"],
-            }
-        )
-
-
-def test_image_agent_search_ignores_unrelated_snapshots(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_text(
-        json.dumps(
-            {
-                "title": "Birds",
-                "facts": [
-                    "Migration peaks in spring.",
-                    "Nests are built from twigs.",
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    results = agent._search(
-        {
-            "capability": "search",
-            "prompt": "Create a release dashboard for server latency.",
-            "allowed_tools": ["search"],
-            "search_snapshots": [str(snapshot)],
-        }
-    )
-
-    assert results == []
-
-
-def test_image_agent_memory_maps_visual_constraints(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    memory = agent._memory(
-        {
-            "capability": "memory",
-            "allowed_tools": ["memory"],
-            "memory": {
-                "preferred_label": "Image Agent Benchmark",
-                "preferred_style": "minimal monochrome",
-                "typography": "mono",
-                "density": "compact",
-                "persona": "ignored",
-            },
-        }
-    )[0]
-
-    assert memory["mapped_title"] == "Image Agent Benchmark"
-    assert memory["mapped_style"] == "minimal monochrome"
-    assert memory["visual_constraints"] == {"typography": "mono", "density": "compact"}
-    assert memory["unmapped"] == {"persona": "ignored"}
-
-
-def test_image_agent_does_not_treat_preferred_style_as_visible_text(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    case = {
-        "capability": "memory",
-        "prompt": "Create a compact review card.",
-        "allowed_tools": ["memory"],
-        "memory": {
-            "preferred_label": "Signal Review",
-            "preferred_style": "minimal monochrome",
         },
+        tmp_path / "output",
+    )
+
+    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
+
+    assert "Launch Readiness Board" in image_text
+    assert "Scope" in image_text
+    assert "(8 + 4) / 3 = 4" in image_text
+    assert "context gap" in image_text
+
+
+def test_agent_manifest_points_at_base_candidate_entrypoint() -> None:
+    manifest = Path("agent/agent.yaml").read_text(encoding="utf-8")
+
+    assert "entrypoint: agent.agent:ImageAgent" in manifest
+
+
+def test_last_winner_module_is_importable_when_empty() -> None:
+    import agent.last_winner as last_winner
+
+    assert last_winner.__name__ == "agent.last_winner"
+
+
+def test_round_helper_generates_two_daily_utc_slots() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+
+    assert round_manager.current_round_id(datetime(2026, 7, 6, 0, 0, tzinfo=UTC)) == "20260706-0"
+    assert round_manager.current_round_id(datetime(2026, 7, 6, 11, 59, tzinfo=UTC)) == "20260706-0"
+    assert round_manager.current_round_id(datetime(2026, 7, 6, 12, 0, tzinfo=UTC)) == "20260706-1"
+    assert round_manager.current_round_id(datetime(2026, 7, 6, 23, 59, tzinfo=UTC)) == "20260706-1"
+
+
+def test_round_archive_filename_is_stable_and_safe() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+
+    assert (
+        round_manager.archive_filename("20260706-1", 42, "abcdef1234567890")
+        == "20260706_1_pr_42_abcdef123456.py"
+    )
+
+
+def test_round_candidate_file_rules_only_accept_agent_candidate_surface() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+
+    assert round_manager.candidate_file_failures(["agent/agent.py"]) == []
+
+    failures = round_manager.candidate_file_failures(["tests/test_image_agent.py"])
+    assert "agent/agent.py" in "\n".join(failures)
+
+    failures = round_manager.candidate_file_failures(["agent/agent.py", "tests/test_image_agent.py"])
+    assert "may only change `agent/agent.py`" in "\n".join(failures)
+
+    failures = round_manager.candidate_file_failures(["agent/agent.py", "agent/last_winner.py", "winners/past.py"])
+    assert "agent/last_winner.py" in "\n".join(failures)
+
+
+def test_round_quality_policy_uses_round_threshold_for_merge_improvement() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+
+    merge_threshold_report = {
+        "status": "fail",
+        "policy": {"reasons": ["score improvement 0.50 is below required 1.00"]},
+    }
+    quality_failure_report = {
+        "status": "fail",
+        "policy": {"reasons": ["overall score 70.00 is below required 75.00"]},
     }
 
-    grounding = agent._build_grounding(case)
-    spec = agent._build_generation_spec(case, grounding)
-
-    assert spec["style"] == "minimal monochrome"
-    assert "minimal monochrome" not in spec["visible_text"]
-    assert "minimal monochrome" not in spec["must_include"]
+    assert round_manager.report_passes_quality_policy(merge_threshold_report) is True
+    assert round_manager.report_passes_quality_policy(quality_failure_report) is False
 
 
-def test_image_agent_reason_normalizes_parenthesized_arithmetic(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
+def test_round_promotion_staging_keeps_final_diff_to_winner_files(tmp_path: Path) -> None:
+    from support.round_manager_import import load_round_manager
 
-    result = agent._reason(
-        {
-            "capability": "reason",
-            "prompt": "Create a card that shows the correct result of (8 + 4) / 3.",
-            "allowed_tools": ["reason"],
-        }
-    )[0]
+    round_manager = load_round_manager()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "test")
+    _git(repo, "config", "user.email", "test@example.com")
+    (repo / "agent").mkdir()
+    (repo / "agent" / "agent.py").write_text("BASE = True\n", encoding="utf-8")
+    (repo / "agent" / "agent.yaml").write_text("entrypoint: agent.agent:ImageAgent\n", encoding="utf-8")
+    (repo / "agent" / "last_winner.py").write_text("", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    base_branch = _git_output(repo, "branch", "--show-current")
 
-    assert result["source"] == "local-arithmetic-parser"
-    assert result["answer"] == "4"
-    assert result["display"] == "(8 + 4) / 3 = 4"
+    _git(repo, "checkout", "-q", "-b", "candidate")
+    (repo / "agent" / "agent.py").write_text("WINNER = True\n", encoding="utf-8")
+    _git(repo, "add", "agent/agent.py")
+    _git(repo, "commit", "-q", "-m", "candidate")
+    head = _git_output(repo, "rev-parse", "HEAD")
 
+    _git(repo, "checkout", "-q", base_branch)
+    (repo / "agent" / "last_winner.py").write_text("WINNER_A = True\n", encoding="utf-8")
+    (repo / "winners").mkdir()
+    (repo / "winners" / "a.py").write_text("WINNER_A = True\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "promote-a")
+    base = _git_output(repo, "rev-parse", "HEAD")
 
-def test_image_agent_reason_handles_leading_decimal_arithmetic(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
+    _git(repo, "checkout", "-q", "candidate")
+    (repo / "_imagent-bench").mkdir()
+    (repo / "_imagent-bench" / "artifact.txt").write_text("do not stage\n", encoding="utf-8")
 
-    result = agent._reason(
-        {
-            "capability": "reason",
-            "prompt": "Create a card that shows the correct result of .5 + .25.",
-            "allowed_tools": ["reason"],
-        }
-    )[0]
+    cwd = Path.cwd()
+    os.chdir(repo)
+    try:
+        candidate_paths = round_manager.changed_paths_between(base, head)
+        winner_code = Path("agent/agent.py").read_text(encoding="utf-8")
+        round_manager.merge_base_into_candidate(base)
+        round_manager.restore_changed_paths_from_ref(base, candidate_paths)
+        Path("agent/last_winner.py").write_text(winner_code, encoding="utf-8")
+        Path("winners").mkdir(exist_ok=True)
+        Path("winners/archive.py").write_text(winner_code, encoding="utf-8")
+        round_manager.stage_paths([*candidate_paths, "agent/last_winner.py", "winners/archive.py"])
+        staged = _git_output(repo, "diff", "--cached", "--name-only").splitlines()
+        final_diff = _git_output(repo, "diff", "--cached", "--name-status", base).splitlines()
+    finally:
+        os.chdir(cwd)
 
-    assert result["answer"] == "0.75"
-    assert result["display"] == ".5 + .25 = 0.75"
-
-
-def test_image_agent_reason_handles_divide_by_zero_gracefully(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    result = agent._reason(
-        {
-            "capability": "reason",
-            "prompt": "Create a card that shows the result of 1 / 0.",
-            "allowed_tools": ["reason"],
-        }
-    )[0]
-
-    assert result["answer"] == ""
-    assert "Could not evaluate 1 / 0" == result["display"]
-    assert "float division by zero" in result["rationale"]
-
-
-def test_image_agent_mock_svg_renders_spec_not_raw_prompt(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        agent,
-        "_score_candidate",
-        lambda case, output_dir, candidate, spec: {
-            "score": 1.0 if candidate["candidate_index"] == 0 else 0.0,
-            "passed": True,
-            "failed_checks": [],
-            "critique": [],
-            "cost_usd": 0.0,
-        },
-    )
-    output = agent.generate(
-        {
-            "run_id": "reason-math-001--seed-1001",
-            "capability": "reason",
-            "prompt": "Create a small educational card that shows the correct result of 2 + 3.",
-            "seed": 1001,
-            "allowed_tools": ["reason"],
-        },
-        tmp_path,
-    )
-    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
-
-    assert "2 + 3 = 5" in image_text
-    assert "Create a small educational card that shows the correct result of 2 + 3." not in image_text
+    assert "_imagent-bench/artifact.txt" not in staged
+    assert final_diff == ["M\tagent/last_winner.py", "A\twinners/archive.py"]
 
 
-def test_image_agent_mock_svg_does_not_render_style_label(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        agent,
-        "_score_candidate",
-        lambda case, output_dir, candidate, spec: {
-            "score": 1.0 if candidate["candidate_index"] == 0 else 0.0,
-            "passed": True,
-            "failed_checks": [],
-            "critique": [],
-            "cost_usd": 0.0,
-        },
-    )
-    output = agent.generate(
-        {
-            "run_id": "memory-style-001--seed-1001",
-            "capability": "memory",
-            "prompt": "Create a compact review card.",
-            "seed": 1001,
-            "allowed_tools": ["memory"],
-            "memory": {
-                "preferred_label": "Signal Review",
-                "preferred_style": "minimal monochrome",
-            },
-        },
-        tmp_path,
-    )
-    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
+def test_round_filters_maintainer_and_needs_rebase_prs() -> None:
+    from support.round_manager_import import load_round_manager
 
-    assert "Signal Review" in image_text
-    assert "Style: minimal monochrome" not in image_text
-    assert "minimal monochrome" not in image_text
-
-
-def test_image_agent_selects_second_candidate_without_revision(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=0)
-    scores = iter(
+    round_manager = load_round_manager()
+    github = _FakeGitHub(
         [
-            {"score": 0.2, "passed": False, "failed_checks": ["PASS"], "critique": ["Add exact visible text: PASS"], "cost_usd": 0.0},
-            {"score": 1.0, "passed": True, "failed_checks": [], "critique": [], "cost_usd": 0.0},
+            _pull(1, "alice", ["pr-rules-pass"]),
+            _pull(2, "bob", ["pr-rules-pass", "needs-rebase"]),
+            _pull(3, "carol", ["pr-rules-pass"], author_association="MEMBER"),
         ]
     )
-    monkeypatch.setattr(agent, "_score_candidate", lambda case, output_dir, candidate, spec: next(scores))
 
-    output = agent.generate(_feedback_case(), tmp_path)
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
+    prs = round_manager.open_same_repo_prs(github, "imagent-ai/imagent")
 
-    assert Path(output["image_path"]).exists()
-    assert len(trace["feedback"]) == 1
-    assert trace["feedback"][0]["candidate_index"] == 1
-    assert trace["feedback"][0]["selected"] is True
-    assert len(trace["feedback_attempts"]) == 2
-    assert trace["feedback_attempts"][1]["selected"] is True
+    assert [item["number"] for item in prs] == [1]
+    assert round_manager.is_maintainer_pr(_pull(4, "dave", [], author_association="COLLABORATOR"), "imagent-ai/imagent")
 
 
-def test_image_agent_rejects_unsafe_run_id(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path)
-
-    with pytest.raises(ValueError, match="run_id"):
-        agent.generate(
-            {
-                "run_id": "bad/path",
-                "capability": "plan",
-                "prompt": "Create a card.",
-                "seed": 1001,
-                "allowed_tools": [],
-            },
-            tmp_path,
-        )
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True)
 
 
-def test_image_agent_revises_after_round_zero_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=1)
-    scores = iter(
-        [
-            {"score": 0.1, "passed": False, "failed_checks": ["PASS"], "critique": ["Add exact visible text: PASS"], "cost_usd": 0.0},
-            {"score": 0.3, "passed": False, "failed_checks": ["PASS"], "critique": ["Add exact visible text: PASS"], "cost_usd": 0.0},
-            {"score": 1.0, "passed": True, "failed_checks": [], "critique": [], "cost_usd": 0.0},
-            {"score": 0.6, "passed": False, "failed_checks": ["PASS"], "critique": ["Add exact visible text: PASS"], "cost_usd": 0.0},
-        ]
-    )
-    monkeypatch.setattr(agent, "_score_candidate", lambda case, output_dir, candidate, spec: next(scores))
-
-    output = agent.generate(_feedback_case(), tmp_path)
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
-
-    assert len(trace["feedback"]) == 2
-    assert trace["feedback"][0]["selected"] is False
-    assert trace["feedback"][0]["failed_checks"] == ["PASS"]
-    assert trace["feedback"][1]["selected"] is True
-    assert "revision_focus" in trace["feedback"][1]["candidate_prompt"]
-    assert len(trace["feedback_attempts"]) == 4
-    assert sum(1 for attempt in trace["feedback_attempts"] if attempt["selected"]) == 1
-    assert "PASS" in trace["final_generation_context"]["prompt"]
+def _git_output(repo: Path, *args: str) -> str:
+    return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
-def test_image_agent_honors_configured_feedback_rounds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=3)
-    monkeypatch.setattr(
-        agent,
-        "_score_candidate",
-        lambda case, output_dir, candidate, spec: {
-            "score": 0.0,
-            "passed": False,
-            "failed_checks": ["PASS"],
-            "critique": ["Add exact visible text: PASS"],
-            "cost_usd": 0.0,
-        },
-    )
-
-    output = agent.generate(_feedback_case(), tmp_path)
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
-
-    assert len(trace["feedback"]) == 4
-    assert len(trace["feedback_attempts"]) == 8
-    assert trace["feedback"][-1]["round"] == 3
-    assert trace["feedback_attempts"][-1]["round"] == 3
+def _pull(number: int, author: str, labels: list[str], *, author_association: str = "CONTRIBUTOR") -> dict:
+    return {
+        "number": number,
+        "created_at": f"2026-07-06T00:00:{number:02d}Z",
+        "draft": False,
+        "author_association": author_association,
+        "head": {"repo": {"full_name": "imagent-ai/imagent"}},
+        "user": {"login": author},
+        "labels": [{"name": label} for label in labels],
+    }
 
 
-def test_image_agent_continues_after_generation_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=0)
-    original_generate_candidate = agent._generate_candidate
-    calls = {"count": 0}
+class _FakeGitHub:
+    def __init__(self, pulls: list[dict]) -> None:
+        self.pulls = pulls
 
-    def flaky_generate_candidate(*args, **kwargs):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            raise RuntimeError("backend timeout")
-        return original_generate_candidate(*args, **kwargs)
+    def paginate(self, path: str) -> list[dict]:
+        if path.startswith("/repos/imagent-ai/imagent/pulls?"):
+            return self.pulls
+        raise AssertionError(path)
 
-    monkeypatch.setattr(agent, "_generate_candidate", flaky_generate_candidate)
-
-    output = agent.generate(_feedback_case(), tmp_path)
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
-
-    assert Path(output["image_path"]).exists()
-    assert trace["feedback_attempts"][0]["score"] == 0.0
-    assert "Generation error: backend timeout" in trace["feedback_attempts"][0]["critique"][0]
-    assert trace["feedback_attempts"][1]["selected"] is True
-
-
-def test_image_agent_continues_after_verification_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=0)
-    calls = {"count": 0}
-
-    def flaky_verify(case, output, trace, checks):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            raise RuntimeError("judge timeout")
-        return {
-            index: {"passed": True, "reason": "ok", "provider": "mock_text"}
-            for index, _check in enumerate(checks)
-        }
-
-    agent.verifier.evaluate_image_checks = flaky_verify
-
-    output = agent.generate(_feedback_case(), tmp_path)
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
-
-    assert Path(output["image_path"]).exists()
-    assert trace["feedback_attempts"][0]["score"] == 0.0
-    assert "Verification error: judge timeout" in trace["feedback_attempts"][0]["critique"][0]
-    assert trace["feedback_attempts"][1]["selected"] is True
-
-
-def test_image_agent_raises_when_all_candidates_fail(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=0)
-
-    def always_fail(*args, **kwargs):
-        raise RuntimeError("backend timeout")
-
-    monkeypatch.setattr(agent, "_generate_candidate", always_fail)
-
-    with pytest.raises(RuntimeError, match="agent did not produce a usable image: backend timeout"):
-        agent.generate(_feedback_case(), tmp_path)
-
-
-def test_openrouter_verifier_rejects_non_boolean_passed_values(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    verifier = OpenRouterVisionVerifier({}, tmp_path)
-    image_path = tmp_path / "image.svg"
-    image_path.write_text("<svg><text>PASS</text></svg>", encoding="utf-8")
-
-    monkeypatch.setattr(
-        verifier,
-        "_post_json",
-        lambda payload: {
-            "choices": [
-                {
-                    "message": {
-                        "content": json.dumps(
-                            {"checks": [{"value": "PASS", "passed": "false", "reason": "bad type"}]}
-                        )
-                    }
-                }
-            ]
-        },
-    )
-
-    with pytest.raises(ImageVerificationError, match="must be a boolean"):
-        verifier.evaluate_image_checks(
-            {"id": "case-1", "prompt": "Create PASS."},
-            {"image_path": str(image_path)},
-            {},
-            [{"type": "image_contains", "value": "PASS"}],
-        )
-
-
-def test_build_image_verifier_normalizes_live_mode(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-
-    verifier = build_image_verifier({"agent": {"image_backend": {"mode": " LIVE "}}}, tmp_path)
-
-    assert isinstance(verifier, OpenRouterVisionVerifier)
-
-
-def test_image_agent_live_requires_api_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    agent = ImageAgent()
-
-    with pytest.raises(Exception, match="OPENROUTER_API_KEY"):
-        agent.setup(_mock_config(mode="live"), tmp_path)
-
-
-def test_image_backend_client_uses_returned_media_type_extension(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    client = ImageBackendClient({"output_format": "png"})
-    jpeg_bytes = b"jpeg-bytes"
-
-    def fake_post(payload: dict) -> dict:
-        return {
-            "data": [
-                {
-                    "b64_json": base64.b64encode(jpeg_bytes).decode("ascii"),
-                    "media_type": "image/jpeg",
-                }
-            ],
-            "usage": {"cost": 0.01},
-        }
-
-    monkeypatch.setattr(client, "_post_json", fake_post)
-
-    metadata = client.generate("prompt", 1001, tmp_path / "image.png")
-
-    assert metadata["media_type"] == "image/jpeg"
-    assert metadata["image_path"].endswith(".jpg")
-    assert (tmp_path / "image.jpg").read_bytes() == jpeg_bytes
-
-
-def test_image_backend_configured_mime_type_maps_to_file_extension() -> None:
-    assert _output_extension(Path("image"), None, "image/png") == ".png"
-
-
-def test_image_agent_records_actual_live_image_format(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    agent = _setup_agent(monkeypatch, tmp_path, max_feedback_rounds=0, mode="live")
-
-    class FakeClient:
-        def generate(self, prompt: str, seed: int, output_path: Path) -> dict[str, object]:
-            jpg_path = output_path.with_suffix(".jpg")
-            jpg_path.write_bytes(b"jpg")
-            return {
-                "image_path": str(jpg_path),
-                "provider": "openrouter",
-                "model": "fake-model",
-                "cost_usd": 0.01,
-            }
-
-    agent.client = FakeClient()
-    monkeypatch.setattr(
-        agent,
-        "_score_candidate",
-        lambda case, output_dir, candidate, spec: {
-            "score": 1.0 if candidate["candidate_index"] == 0 else 0.0,
-            "passed": True,
-            "failed_checks": [],
-            "critique": [],
-            "cost_usd": 0.0,
-        },
-    )
-    output = agent.generate(
-        {
-            "run_id": "live-case",
-            "capability": "plan",
-            "prompt": "Create a card.",
-            "seed": 1001,
-            "allowed_tools": [],
-        },
-        tmp_path,
-    )
-
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
-
-    assert output["image_path"].endswith(".jpg")
-    assert trace["planning"]["generation_plan"]["format"] == "jpg"
+    def issue_labels(self, number: int) -> set[str]:
+        pull = next(item for item in self.pulls if item["number"] == number)
+        return {label["name"] for label in pull["labels"]}

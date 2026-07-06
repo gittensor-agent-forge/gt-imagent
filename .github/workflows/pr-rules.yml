@@ -1,0 +1,154 @@
+name: PR Rules
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate contributor PR rules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const pr = context.payload.pull_request;
+            const isSameRepoPr = pr.head.repo.full_name === `${owner}/${repo}`;
+            const labels = {
+              pass: { name: 'pr-rules-pass', color: '2da44e' },
+              invalid: { name: 'invalid-pr', color: 'd73a4a' },
+              duplicate: { name: 'duplicate-pr', color: 'd73a4a' },
+              needsRebase: { name: 'needs-rebase', color: 'fbca04' }
+            };
+
+            for (const label of Object.values(labels)) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+              } catch (error) {
+                if (error.status === 404) {
+                  await github.rest.issues.createLabel({ owner, repo, name: label.name, color: label.color });
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100
+            });
+            const filenames = files.map((file) => file.filename);
+            const body = pr.body || '';
+            const trustedAuthorAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+            const isMaintainerPr = pr.user.login === owner || trustedAuthorAssociations.has(pr.author_association);
+            const titlePattern = /^(feat|fix|refactor|docs|test|perf|chore|ci|build|style): .+/;
+            const requiredSections = [
+              '## Summary',
+              '## Motivation',
+              '## Changes',
+              '## Testing',
+              '## Benchmark Impact'
+            ];
+
+            async function removeLabel(name) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: pull_number, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+
+            if (isMaintainerPr) {
+              await removeLabel(labels.pass.name);
+              await removeLabel(labels.invalid.name);
+              await removeLabel(labels.duplicate.name);
+              await removeLabel(labels.needsRebase.name);
+              return;
+            }
+
+            const extraFiles = filenames.filter((name) => name !== 'agent/agent.py');
+            const failures = [];
+
+            if (!isSameRepoPr) {
+              failures.push(
+                'Round submissions must be opened from a branch in this repository; fork PRs cannot be evaluated because the bot must use benchmark secrets and push promotion commits.'
+              );
+            }
+            if (!titlePattern.test(pr.title || '')) {
+              failures.push('PR title must use a conventional prefix, for example `feat: improve image planner`.');
+            }
+            for (const section of requiredSections) {
+              if (!body.includes(section)) {
+                failures.push(`PR body must include \`${section}\`.`);
+              }
+            }
+            if (!filenames.includes('agent/agent.py')) {
+              failures.push('Contributor benchmark PRs must change `agent/agent.py`.');
+            }
+            if (extraFiles.length) {
+              failures.push(
+                `Contributor benchmark PRs may only change \`agent/agent.py\`; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
+              );
+            }
+            if (isSameRepoPr) {
+              const openPulls = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100
+              });
+              const currentCreatedAt = new Date(pr.created_at).getTime();
+              const olderDuplicate = openPulls
+                .filter((item) => item.number !== pull_number)
+                .filter((item) => item.head.repo.full_name === `${owner}/${repo}`)
+                .filter((item) => item.user.login === pr.user.login)
+                .filter((item) => {
+                  const createdAt = new Date(item.created_at).getTime();
+                  return createdAt < currentCreatedAt || (createdAt === currentCreatedAt && item.number < pull_number);
+                })
+                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+              if (olderDuplicate) {
+                failures.push(`Only one open PR per contributor is allowed per round. Update #${olderDuplicate.number} instead.`);
+              }
+            }
+
+            if (failures.length) {
+              await removeLabel(labels.pass.name);
+              await removeLabel(labels.needsRebase.name);
+              const labelsToAdd = [labels.invalid.name];
+              if (failures.some((failure) => failure.includes('Only one open PR per contributor'))) {
+                labelsToAdd.push(labels.duplicate.name);
+              }
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: labelsToAdd });
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull_number,
+                body: [
+                  'This PR was closed before benchmark because it does not match the contributor rules.',
+                  '',
+                  ...failures.map((failure) => `- ${failure}`),
+                  '',
+                  'Update the PR title/body/files, then reopen the PR.'
+                ].join('\n')
+              });
+              await github.rest.pulls.update({ owner, repo, pull_number, state: 'closed' });
+              return;
+            }
+
+            await removeLabel(labels.invalid.name);
+            await removeLabel(labels.duplicate.name);
+            await removeLabel(labels.needsRebase.name);
+            await removeLabel(labels.pass.name);
+            await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: [labels.pass.name] });

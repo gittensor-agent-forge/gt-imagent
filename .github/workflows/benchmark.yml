@@ -1,23 +1,43 @@
-name: Benchmark
+name: Round Benchmark
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "0 0,12 * * *"
   workflow_dispatch:
+    inputs:
+      round_id:
+        description: Optional round id override
+        required: false
+        type: string
+
+env:
+  IMAGENT_BENCH_REPOSITORY: imagent-ai/imagent-bench
+  IMAGENT_BENCH_REF: 8b68e238a6b19184138e66b2054e4f338a62b062
+  IMAGENT_ROUND_THRESHOLD: ${{ vars.IMAGENT_ROUND_THRESHOLD || '0' }}
+  IMAGENT_BASELINE_SCORE: ${{ vars.IMAGENT_BASELINE_SCORE || '0' }}
+  IMAGENT_BASELINE_COMMIT: ${{ vars.IMAGENT_BASELINE_COMMIT }}
+  IMAGENT_ROUND_ID: ${{ inputs.round_id }}
 
 permissions:
-  contents: read
+  actions: write
+  contents: write
   issues: write
   pull-requests: write
 
+concurrency:
+  group: imagent-round-benchmark
+  cancel-in-progress: false
+
 jobs:
-  official-benchmark:
+  round-benchmark:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout candidate
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,105 +45,28 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Checkout imagent-bench
+      - name: Checkout pinned imagent-bench
         uses: actions/checkout@v4
         with:
-          repository: imagent-ai/imagent-bench
+          repository: ${{ env.IMAGENT_BENCH_REPOSITORY }}
+          ref: ${{ env.IMAGENT_BENCH_REF }}
           path: _imagent-bench
 
-      - name: Install imagent-bench
+      - name: Install benchmark runner
         run: |
           python -m pip install -U pip
           python -m pip install -e ./_imagent-bench
 
-      - name: Run official benchmark
+      - name: Run round manager
         env:
-          BENCHMARK_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          imagent-bench run \
-            --repository . \
-            --commit "$BENCHMARK_COMMIT" \
-            --config _imagent-bench/configs/official.json \
-            --output-dir benchmark-output
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python .github/scripts/round_manager.py
 
-      - name: Upload benchmark artifacts
+      - name: Upload round artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: imagent-benchmark-report
-          path: benchmark-output
-          if-no-files-found: error
-
-      - name: Add benchmark summary
-        if: always() && hashFiles('benchmark-output/benchmark-summary.md') != ''
-        run: cat benchmark-output/benchmark-summary.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment and label pull request
-        if: >-
-          always() &&
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          hashFiles('benchmark-output/benchmark-report.json') != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('benchmark-output/benchmark-report.json', 'utf8'));
-            const summary = fs.readFileSync('benchmark-output/benchmark-summary.md', 'utf8');
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const issue_number = context.issue.number;
-            const labels = {
-              'benchmark-pass': '2da44e',
-              'benchmark-fail': 'd73a4a',
-              'benchmark-running': 'fbca04'
-            };
-            for (const [name, color] of Object.entries(labels)) {
-              try {
-                await github.rest.issues.getLabel({ owner, repo, name });
-              } catch (error) {
-                if (error.status === 404) {
-                  await github.rest.issues.createLabel({ owner, repo, name, color });
-                } else {
-                  throw error;
-                }
-              }
-            }
-            for (const name of Object.keys(labels)) {
-              try {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
-              } catch (error) {
-                if (error.status !== 404) throw error;
-              }
-            }
-            await github.rest.issues.addLabels({
-              owner,
-              repo,
-              issue_number,
-              labels: [report.status === 'pass' ? 'benchmark-pass' : 'benchmark-fail']
-            });
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number,
-              body: summary
-            });
-
-      - name: Enforce benchmark policy
-        if: always()
-        run: |
-          python - <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          report_path = Path("benchmark-output/benchmark-report.json")
-          if not report_path.exists():
-              print("benchmark report was not created", file=sys.stderr)
-              sys.exit(1)
-          report = json.loads(report_path.read_text(encoding="utf-8"))
-          if report.get("status") != "pass":
-              for reason in report.get("policy", {}).get("reasons", []):
-                  print(reason, file=sys.stderr)
-              sys.exit(1)
-          PY
+          name: imagent-round-output
+          path: round-output
+          if-no-files-found: ignore

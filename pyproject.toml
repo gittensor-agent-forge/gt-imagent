@@ -20,7 +20,8 @@ dev = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["agent*"]
+include = ["agent*", "winners*"]
+namespaces = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

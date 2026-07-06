@@ -1,6 +1,6 @@
 id: image-agent
 name: Image Agent
-entrypoint: agent:ImageAgent
+entrypoint: agent.agent:ImageAgent
 version: 0.1.0
 supports:
   plan: true

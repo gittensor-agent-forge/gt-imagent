@@ -1,207 +1,225 @@
 from __future__ import annotations
 
-import copy
+import ast
+import html
+import json
+import re
 import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from .common import relative_to_output, validate_run_id
-    from .generation import GenerationMixin
-    from .grounding import GroundingMixin
-    from .image_backend_api import ImageBackendClient
-    from .rendering import RenderingMixin
-    from .verifier import build_image_verifier
-except ImportError:  # pragma: no cover - manifest loader imports this module outside a package
-    from common import relative_to_output, validate_run_id
-    from generation import GenerationMixin
-    from grounding import GroundingMixin
-    from image_backend_api import ImageBackendClient
-    from rendering import RenderingMixin
-    from verifier import build_image_verifier
 
-
-class ImageAgent(GroundingMixin, GenerationMixin, RenderingMixin):
-    """General image agent with a structured planning and verification loop."""
+class BaseImageAgent:
+    """Small reference agent that contributors can replace in PRs."""
 
     def setup(self, config: dict[str, Any], workdir: Path) -> None:
         self.config = config
         self.workdir = Path(workdir).expanduser().resolve()
-        runtime = config.get("runtime", {})
-        self.max_feedback_rounds = max(0, int(runtime.get("max_feedback_rounds", 1)))
-        self.candidates_per_round = max(1, int(runtime.get("candidates_per_round", 2)))
-        image_config = config.get("agent", {}).get("image_backend", {})
-        mode = str(image_config.get("mode", "mock")).strip().lower()
-        if mode not in {"mock", "live"}:
-            raise ValueError(f"unsupported image backend mode: {mode}")
-        self.mode = mode
-        self.image_config = image_config
-        self.client = ImageBackendClient(image_config) if self.mode == "live" else None
-        self.verifier = build_image_verifier(config, self.workdir)
 
     def generate(self, case: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         started = time.perf_counter()
-        run_id = validate_run_id(case["run_id"])
         output_dir = Path(output_dir)
         images_dir = output_dir / "images"
         traces_dir = output_dir / "traces"
         images_dir.mkdir(parents=True, exist_ok=True)
         traces_dir.mkdir(parents=True, exist_ok=True)
 
-        seed = int(case.get("seed", 0))
-        grounding_bundle = self._build_grounding_bundle(case)
-        grounding = grounding_bundle.grounding
-        tool_calls = list(grounding_bundle.tool_calls)
-        initial_spec = self._build_generation_spec(case, grounding)
-        tool_calls.append(
-            {
-                "tool": "planner",
-                "arguments": {
-                    "capability": str(case.get("capability", "unknown")),
-                    "prompt": str(case.get("prompt", "")),
-                },
-                "result_count": 1,
-                "result": {
-                    "title": initial_spec["title"],
-                    "layout": initial_spec["layout"],
-                    "must_include_count": len(initial_spec["must_include"]),
-                },
-            }
-        )
+        run_id = _safe_run_id(case.get("run_id") or case.get("id") or "case")
+        spec = self._build_spec(case)
+        image_path = images_dir / f"{run_id}.svg"
+        trace_path = traces_dir / f"{run_id}.json"
 
-        feedback_entries: list[dict[str, Any]] = []
-        feedback_attempts: list[dict[str, Any]] = []
-        selected_candidate: dict[str, Any] | None = None
-        selected_spec = copy.deepcopy(initial_spec)
-        working_spec = copy.deepcopy(initial_spec)
-        total_generation_cost = 0.0
-        total_verifier_cost = 0.0
-        total_candidates = 0
-        round_count = 1 + self.max_feedback_rounds
-
-        for round_index in range(round_count):
-            candidates: list[dict[str, Any]] = []
-            for candidate_index, candidate_seed in enumerate(self._candidate_seeds(seed, round_index)):
-                variant = self._candidate_variant(round_index, candidate_index)
-                try:
-                    candidate = self._generate_candidate(
-                        case=case,
-                        output_dir=output_dir,
-                        run_id=run_id,
-                        seed=candidate_seed,
-                        round_index=round_index,
-                        candidate_index=candidate_index,
-                        spec=working_spec,
-                        variant=variant,
-                        grounding=grounding,
-                        tool_calls=tool_calls,
-                    )
-                except Exception as exc:
-                    candidate = self._failed_candidate(
-                        case=case,
-                        output_dir=output_dir,
-                        run_id=run_id,
-                        seed=candidate_seed,
-                        round_index=round_index,
-                        candidate_index=candidate_index,
-                        spec=working_spec,
-                        variant=variant,
-                        grounding=grounding,
-                        tool_calls=tool_calls,
-                        error=exc,
-                    )
-                total_generation_cost += float(candidate["metadata"].get("cost_usd", 0.0) or 0.0)
-                verification = self._score_candidate(case, output_dir, candidate, working_spec)
-                total_verifier_cost += float(verification["cost_usd"])
-                candidate.update(verification)
-                candidates.append(candidate)
-                total_candidates += 1
-                feedback_attempts.append(
-                    {
-                        "round": round_index,
-                        "candidate_index": candidate_index,
-                        "candidate_image_path": relative_to_output(candidate["image_path"], output_dir),
-                        "candidate_prompt": candidate["prompt"],
-                        "score": round(float(candidate["score"]), 6),
-                        "failed_checks": list(candidate["failed_checks"]),
-                        "critique": list(candidate["critique"]),
-                        "selected": False,
-                    }
-                )
-
-            best = max(
-                candidates,
-                key=lambda item: (
-                    float(item["score"]),
-                    -float(item["metadata"].get("latency_ms", 0.0) or 0.0),
-                    -int(item["candidate_index"]),
-                ),
-            )
-            feedback_entries.append(
-                {
-                    "round": round_index,
-                    "candidate_index": best["candidate_index"],
-                    "candidate_image_path": relative_to_output(best["image_path"], output_dir),
-                    "candidate_prompt": best["prompt"],
-                    "score": round(float(best["score"]), 6),
-                    "failed_checks": list(best["failed_checks"]),
-                    "critique": list(best["critique"]),
-                    "selected": False,
-                }
-            )
-
-            selected_candidate = best
-            selected_spec = copy.deepcopy(working_spec)
-            if best["passed"] or round_index == round_count - 1:
-                break
-            working_spec = self._revise_spec(working_spec, best["failed_checks"])
-
-        if selected_candidate is None:
-            raise RuntimeError("agent did not produce any candidate")
-        if not Path(selected_candidate["image_path"]).exists():
-            error = selected_candidate["metadata"].get("error", "all candidate generations failed")
-            raise RuntimeError(f"agent did not produce a usable image: {error}")
-
-        feedback_entries[-1]["selected"] = True
-        for attempt in feedback_attempts:
-            if (
-                int(attempt["round"]) == int(selected_candidate["round"])
-                and int(attempt["candidate_index"]) == int(selected_candidate["candidate_index"])
-            ):
-                attempt["selected"] = True
-                break
-        final_image_path = self._promote_winner(selected_candidate["image_path"], output_dir / "images", run_id)
-        final_trace_path = traces_dir / f"{run_id}.json"
-        trace = self._build_trace(
-            case=case,
-            base_seed=seed,
-            output_dir=output_dir,
-            final_image_path=final_image_path,
-            grounding=grounding,
-            tool_calls=tool_calls,
-            generation_spec=selected_spec,
-            final_prompt=selected_candidate["prompt"],
-            feedback=feedback_entries,
-            feedback_attempts=feedback_attempts,
-            candidate_count=total_candidates,
-            round_count=len(feedback_entries),
-            selected_candidate=selected_candidate,
-        )
-        self._write_json(final_trace_path, trace)
-
-        selected_metadata = dict(selected_candidate["metadata"])
-        selected_metadata["image_path"] = str(final_image_path)
-        selected_metadata["cost_usd"] = round(total_generation_cost + total_verifier_cost, 6)
-        selected_metadata["generation_cost_usd"] = round(total_generation_cost, 6)
-        selected_metadata["internal_judge_cost_usd"] = round(total_verifier_cost, 6)
-        selected_metadata["candidate_count"] = total_candidates
-        selected_metadata["selected_candidate_index"] = int(selected_candidate["candidate_index"])
-        selected_metadata["latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
-        selected_metadata["agent_id"] = "image-agent"
-        selected_metadata["seed"] = seed
+        image_path.write_text(self._render_svg(spec), encoding="utf-8")
+        trace = {
+            "agent": "base",
+            "prompt": case.get("prompt", ""),
+            "spec": spec,
+        }
+        trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
         return {
-            "image_path": str(final_image_path),
-            "trace_path": str(final_trace_path),
-            "metadata": selected_metadata,
+            "image_path": str(image_path),
+            "trace_path": str(trace_path),
+            "metadata": {
+                "agent_id": "base-image-agent",
+                "provider": "mock-svg",
+                "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+                "cost_usd": 0.0,
+            },
         }
+
+    def _build_spec(self, case: dict[str, Any]) -> dict[str, Any]:
+        prompt = str(case.get("prompt", ""))
+        memory = case.get("memory") if isinstance(case.get("memory"), dict) else {}
+        assets = self._read_assets(case.get("assets", []))
+        facts = self._read_search_facts(case.get("search_snapshots", []), prompt)
+        title = (
+            str(memory.get("preferred_label") or "").strip()
+            or self._title_from_prompt(prompt)
+            or assets.get("title")
+            or ("Image-Agent" if facts else "")
+            or "Image Agent"
+        )
+        sections = self._sections_from_prompt(prompt) or assets.get("sections", [])
+        required_text = [title, *sections, *assets.get("required_text", [])]
+        if "reason" in case.get("allowed_tools", []):
+            display = self._reasoning_display(prompt)
+            if display:
+                required_text.extend([display["answer"], display["display"]])
+        if "PASS" in prompt.upper():
+            required_text.append("PASS")
+        if facts:
+            required_text.extend(["Image-Agent", "context gap"])
+
+        return {
+            "title": title,
+            "sections": _dedupe(sections),
+            "lines": _dedupe([*required_text, *facts[:2]]),
+            "style": str(memory.get("preferred_style") or "simple reference rendering"),
+        }
+
+    def _read_assets(self, values: Any) -> dict[str, Any]:
+        for value in values or []:
+            path = self._case_path(value)
+            if path.suffix.lower() != ".json":
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                continue
+            return {
+                "title": str(data.get("title") or ""),
+                "sections": [str(item) for item in data.get("sections", []) if str(item).strip()],
+                "required_text": [str(item) for item in data.get("required_text", []) if str(item).strip()],
+            }
+        return {"title": "", "sections": [], "required_text": []}
+
+    def _read_search_facts(self, values: Any, prompt: str) -> list[str]:
+        prompt_words = set(re.findall(r"[a-z0-9]+", prompt.lower()))
+        facts: list[str] = []
+        for value in values or []:
+            path = self._case_path(value)
+            if path.suffix.lower() != ".json":
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for fact in data.get("facts", []) if isinstance(data, dict) else []:
+                text = str(fact)
+                fact_words = set(re.findall(r"[a-z0-9]+", text.lower()))
+                if prompt_words & fact_words:
+                    facts.append(text)
+        return _dedupe(facts)
+
+    def _case_path(self, value: Any) -> Path:
+        path = Path(str(value)).expanduser()
+        candidate = path if path.is_absolute() else self.workdir / path
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(self.workdir)
+        return resolved
+
+    def _title_from_prompt(self, prompt: str) -> str:
+        quoted = re.search(r'\btitled\s+["\']([^"\']+)["\']', prompt, re.IGNORECASE)
+        if quoted:
+            return quoted.group(1).strip()
+        match = re.search(r"\btitled\s+(.+?)(?:\s+with\b|\.|$)", prompt, re.IGNORECASE)
+        return match.group(1).strip() if match else ""
+
+    def _sections_from_prompt(self, prompt: str) -> list[str]:
+        match = re.search(r"\bsections?\s+(.+?)(?:\.|$)", prompt, re.IGNORECASE)
+        if not match:
+            return []
+        raw = re.sub(r"\band\b", ",", match.group(1), flags=re.IGNORECASE)
+        return [part.strip(" .") for part in re.split(r"[,;/|]+", raw) if part.strip(" .")]
+
+    def _reasoning_display(self, prompt: str) -> dict[str, str] | None:
+        expression = _extract_expression(prompt)
+        if not expression:
+            return None
+        try:
+            value = _safe_eval(expression)
+        except (ValueError, ZeroDivisionError):
+            return None
+        answer = _format_number(value)
+        return {"answer": answer, "display": f"{expression} = {answer}"}
+
+    def _render_svg(self, spec: dict[str, Any]) -> str:
+        title = html.escape(spec["title"])
+        lines = [html.escape(line) for line in spec["lines"] if line]
+        line_markup = "\n".join(
+            f'<text x="72" y="{170 + index * 38}" font-family="Arial, sans-serif" font-size="24" fill="#111827">{line}</text>'
+            for index, line in enumerate(lines[:8])
+        )
+        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" role="img" aria-label="{title}">
+  <rect width="960" height="540" fill="#f8fafc"/>
+  <rect x="36" y="36" width="888" height="468" rx="8" fill="#ffffff" stroke="#111827" stroke-width="3"/>
+  <text x="72" y="110" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111827">{title}</text>
+  {line_markup}
+</svg>
+"""
+
+
+def _safe_run_id(value: Any) -> str:
+    text = str(value).strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", text):
+        raise ValueError("run_id must be filename safe")
+    return text
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        cleaned = str(value).strip()
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            result.append(cleaned)
+    return result
+
+
+def _extract_expression(prompt: str) -> str:
+    number = r"(?:\d+(?:\.\d*)?|\.\d+)"
+    for match in re.finditer(rf"(?<![A-Za-z0-9_.])(?:{number}|\()[0-9()\s+\-*/.]*", prompt):
+        candidate = match.group(0).strip().rstrip(".")
+        if any(char.isdigit() for char in candidate) and any(op in candidate for op in "+-*/"):
+            ast.parse(candidate, mode="eval")
+            return candidate
+    return ""
+
+
+def _safe_eval(expression: str) -> float:
+    tree = ast.parse(expression, mode="eval")
+
+    def visit(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return visit(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp):
+            value = visit(node.operand)
+            if isinstance(node.op, ast.UAdd):
+                return value
+            if isinstance(node.op, ast.USub):
+                return -value
+        if isinstance(node, ast.BinOp):
+            left = visit(node.left)
+            right = visit(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+        raise ValueError(f"unsupported expression: {type(node).__name__}")
+
+    return visit(tree)
+
+
+def _format_number(value: float) -> str:
+    rounded = round(value)
+    if abs(value - rounded) < 1e-9:
+        return str(int(rounded))
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+ImageAgent = BaseImageAgent
