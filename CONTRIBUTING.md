@@ -3,6 +3,24 @@
 Thanks for contributing to `imagent`. This repository owns the built-in image
 agent implementation.
 
+## Gittensor Relationship
+
+Imagent is being built through Gittensor. Gittensor helps power the open
+competition model used by this repository: contributors submit image-agent
+improvements, benchmark rounds score those submissions, and the highest-quality
+work can become the next public winner.
+
+You do not need Discord access or subnet-specific background to participate.
+The GitHub workflow is the source of truth:
+
+- Contributor work enters through PRs against `agent/agent.py`.
+- Automated rounds evaluate eligible PRs against the benchmark.
+- Winning code is copied into `agent/last_winner.py` and archived in `winners/`.
+- Non-winning eligible PRs can stay open for the next round after rebasing.
+
+This makes the Gittensor contribution path visible in GitHub itself and gives
+contributors a clear way to help improve the software Gittensor is supporting.
+
 ## What to work on
 
 Start from an open [issue](https://github.com/imagent-ai/imagent/issues). Issues

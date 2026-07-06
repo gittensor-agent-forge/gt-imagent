@@ -28,14 +28,30 @@ image-generation agents: modular planners, prompt builders, tool users,
 self-critics, regeneration policies, memory systems, benchmark suites, and
 trajectory-level evaluators.
 
-## Gittensor Direction
+## Built Through Gittensor
 
-Imagent is designed to fit naturally with a Gittensor-style open intelligence
-market: contributors submit agents, objective evaluation assigns scores, and the
-best work becomes visible, reusable, and rewardable. The current GitHub round
-system is the first practical version of that loop.
+Imagent is being built through Gittensor. Gittensor helps power the open
+competition loop behind this project: contributors submit image-agent code,
+automated benchmark rounds evaluate the work, and the best implementations are
+merged, archived, and made visible for everyone to study.
 
-In the future, Imagent can evolve toward a Gittensor-compatible network where:
+You do not need to be in Discord or understand subnet internals to see how
+Gittensor is involved. The relationship is explicit:
+
+- Gittensor supports the open contributor market that Imagent is building
+  toward.
+- Imagent turns image-agent research into benchmarked GitHub PRs.
+- Winning code is promoted into `agent/last_winner.py` and archived under
+  `winners/`.
+- Contributors can inspect prior winners, improve the base agent, and compete
+  in future benchmark rounds.
+
+The current GitHub round system is the first practical version of a
+Gittensor-style open intelligence market: contributors submit agents, objective
+evaluation assigns scores, and the best work becomes visible, reusable, and
+rewardable.
+
+In the future, Imagent can evolve toward deeper Gittensor integration where:
 
 - Miners or contributors submit image-agent strategies.
 - Validators evaluate agents against public and private benchmark suites.
