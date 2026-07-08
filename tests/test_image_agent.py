@@ -1,26 +1,94 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
+import re
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from agent.agent import ImageAgent
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import agent.agent as agent_module
+from agent.agent import DEFAULT_OPENROUTER_MODEL, ImageAgent, OpenRouterImageError
+from imagent_runtime import cli as runtime_cli
 
 
-def _setup_agent(tmp_path: Path) -> ImageAgent:
+def _setup_agent(tmp_path: Path, backend: dict[str, Any] | None = None) -> ImageAgent:
     agent = ImageAgent()
-    agent.setup({"agent": {"image_backend": {"mode": "mock"}}}, tmp_path)
+    agent.setup({"agent": {"image_backend": backend or {}}}, tmp_path)
     return agent
 
 
-def test_base_agent_writes_svg_and_trace(tmp_path: Path) -> None:
+def test_base_agent_does_not_fallback_to_mock_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    agent = _setup_agent(tmp_path, {"mode": "mock"})
+
+    with pytest.raises(OpenRouterImageError, match="OPENROUTER_API_KEY"):
+        agent.generate(
+            {
+                "run_id": "plan-layout",
+                "capability": "plan",
+                "prompt": "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify.",
+                "allowed_tools": ["plan"],
+            },
+            tmp_path / "output",
+        )
+
+
+def test_base_agent_uses_external_runtime(tmp_path: Path) -> None:
     agent = _setup_agent(tmp_path)
+
+    assert agent.runtime.__class__.__module__ == "imagent_runtime.agent_runtime"
+
+
+def test_base_agent_calls_openrouter_gemini_and_writes_image(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    requests: list[dict[str, Any]] = []
+    response_payload = {
+        "created": 1783296000,
+        "data": [
+            {
+                "b64_json": base64.b64encode(b"fake-png-bytes").decode("ascii"),
+                "media_type": "image/png",
+            }
+        ],
+        "usage": {"cost": 0.0123, "total_tokens": 123},
+    }
+
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        requests.append(
+            {
+                "url": request.full_url,
+                "timeout": timeout,
+                "authorization": request.get_header("Authorization"),
+                "payload": json.loads(request.data.decode("utf-8")),
+            }
+        )
+        return _FakeResponse(response_payload)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+    agent = _setup_agent(
+        tmp_path,
+        {
+            "mode": "live",
+            "aspect_ratio": "1:1",
+            "resolution": "1K",
+            "referer": "https://tryimagent.com",
+            "title": "imagent test",
+        },
+    )
 
     output = agent.generate(
         {
-            "run_id": "plan-layout",
+            "run_id": "openrouter-live",
             "capability": "plan",
             "prompt": "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify.",
             "allowed_tools": ["plan"],
@@ -28,18 +96,130 @@ def test_base_agent_writes_svg_and_trace(tmp_path: Path) -> None:
         tmp_path / "output",
     )
 
-    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
-    trace = json.loads(Path(output["trace_path"]).read_text(encoding="utf-8"))
+    image_path = Path(output["image_path"])
+    trace_text = Path(output["trace_path"]).read_text(encoding="utf-8")
+    trace = json.loads(trace_text)
 
-    assert "Context Gap Toolkit" in image_text
-    assert "Plan" in image_text
-    assert "Ground" in image_text
-    assert "Verify" in image_text
-    assert trace["agent"] == "base"
-    assert output["metadata"]["agent_id"] == "base-image-agent"
+    assert image_path.suffix == ".png"
+    assert image_path.read_bytes() == b"fake-png-bytes"
+    assert requests[0]["url"] == "https://openrouter.ai/api/v1/images"
+    assert requests[0]["authorization"] == "Bearer test-key"
+    assert requests[0]["payload"]["model"] == DEFAULT_OPENROUTER_MODEL
+    assert requests[0]["payload"]["aspect_ratio"] == "1:1"
+    assert requests[0]["payload"]["resolution"] == "1K"
+    assert "Context Gap Toolkit" in requests[0]["payload"]["prompt"]
+    assert "test-key" not in trace_text
+    assert trace["provider"] == "openrouter"
+    assert trace["runtime"]["id"] == "base-agent-runtime"
+    assert trace["runtime"]["steps"][-1] == "persist_artifacts"
+    assert trace["model"] == DEFAULT_OPENROUTER_MODEL
+    assert output["metadata"]["model"] == DEFAULT_OPENROUTER_MODEL
+    assert output["metadata"]["runtime_id"] == "base-agent-runtime"
+    assert output["metadata"]["cost_usd"] == 0.0123
 
 
-def test_base_agent_uses_memory_asset_reasoning_and_search_context(tmp_path: Path) -> None:
+def test_cli_runs_reference_agent_with_openrouter(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+
+    exit_code = runtime_cli.main(
+        [
+            "Create a benchmark badge titled CLI PASS.",
+            "--run-id",
+            "cli-pass",
+            "--output-dir",
+            str(tmp_path / "cli-output"),
+        ]
+    )
+    result = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert Path(result["image_path"]).name == "cli-pass.png"
+    assert Path(result["image_path"]).read_bytes() == b"fake-png-bytes"
+    assert Path(result["trace_path"]).exists()
+    assert result["metadata"]["runtime_id"] == "base-agent-runtime"
+
+
+def test_cli_defaults_to_timestamped_results_directory(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+
+    exit_code = runtime_cli.main(["Create a timestamped result image."])
+    result = json.loads(capsys.readouterr().out)
+    image_path = Path(result["image_path"])
+    trace_path = Path(result["trace_path"])
+    run_id = image_path.stem
+    run_dir = image_path.parents[1]
+
+    assert exit_code == 0
+    assert re.fullmatch(r"\d{8}-\d{6}", run_id)
+    assert run_dir == tmp_path / "results" / run_id
+    assert image_path == run_dir / "images" / f"{run_id}.png"
+    assert trace_path == run_dir / "traces" / f"{run_id}.json"
+
+
+def test_cli_keeps_prompt_flag_for_compatibility(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+
+    exit_code = runtime_cli.main(
+        [
+            "--prompt",
+            "Create a legacy prompt flag image.",
+            "--run-id",
+            "legacy-prompt",
+            "--output-dir",
+            str(tmp_path / "legacy-output"),
+        ]
+    )
+    result = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert Path(result["image_path"]).name == "legacy-prompt.png"
+
+
+def test_base_agent_requires_openrouter_key_for_live_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    agent = _setup_agent(tmp_path, {"mode": "live"})
+
+    with pytest.raises(OpenRouterImageError, match="OPENROUTER_API_KEY"):
+        agent.generate(
+            {
+                "run_id": "missing-key",
+                "capability": "plan",
+                "prompt": "Create a small poster.",
+            },
+            tmp_path / "output",
+        )
+
+
+def test_base_agent_uses_memory_asset_reasoning_and_search_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     asset = tmp_path / "brief.json"
     asset.write_text(
         json.dumps(
@@ -63,6 +243,14 @@ def test_base_agent_uses_memory_asset_reasoning_and_search_context(tmp_path: Pat
         ),
         encoding="utf-8",
     )
+    requests: list[dict[str, Any]] = []
+
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        requests.append(json.loads(request.data.decode("utf-8")))
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
     agent = _setup_agent(tmp_path)
 
     output = agent.generate(
@@ -77,12 +265,40 @@ def test_base_agent_uses_memory_asset_reasoning_and_search_context(tmp_path: Pat
         tmp_path / "output",
     )
 
-    image_text = Path(output["image_path"]).read_text(encoding="utf-8")
+    prompt = requests[0]["prompt"]
 
-    assert "Launch Readiness Board" in image_text
-    assert "Scope" in image_text
-    assert "(8 + 4) / 3 = 4" in image_text
-    assert "context gap" in image_text
+    assert Path(output["image_path"]).read_bytes() == b"fake-png-bytes"
+    assert "Launch Readiness Board" in prompt
+    assert "Scope" in prompt
+    assert "(8 + 4) / 3 = 4" in prompt
+    assert "context gap" in prompt
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def _image_response() -> dict[str, Any]:
+    return {
+        "created": 1783296000,
+        "data": [
+            {
+                "b64_json": base64.b64encode(b"fake-png-bytes").decode("ascii"),
+                "media_type": "image/png",
+            }
+        ],
+        "usage": {"cost": 0.0123, "total_tokens": 123},
+    }
 
 
 def test_agent_manifest_points_at_base_candidate_entrypoint() -> None:

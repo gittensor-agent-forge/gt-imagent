@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = []
 
+[project.scripts]
+imagent = "imagent_runtime.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0"
@@ -20,7 +23,7 @@ dev = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["agent*", "winners*"]
+include = ["agent*", "imagent_runtime*", "winners*"]
 namespaces = true
 
 [tool.pytest.ini_options]

@@ -68,6 +68,9 @@ become a reliable foundation for that larger ecosystem.
   benchmark PRs may change.
 - `agent/last_winner.py`: bot-managed copy of the latest winning agent. It starts
   empty and is updated only by the round bot.
+- `imagent_runtime/`: stable runtime and CLI infrastructure used to execute
+  agents locally and in framework flows. Contributor benchmark PRs should not
+  edit this package.
 - `winners/`: bot-managed archive of previous winning agents, intended as a
   public reference library for contributors.
 - `.github/workflows/pr-rules.yml`: validates contributor PRs and closes invalid
@@ -150,12 +153,43 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-Run a quick local demo:
+Run a quick local demo with the CLI:
+
+```bash
+export OPENROUTER_API_KEY=<your-openrouter-api-key>
+
+imagent "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify."
+```
+
+The CLI defaults to `agent.agent:ImageAgent`, so contributors can test the
+reference agent or their own local edits to `agent/agent.py`. To run another
+agent class, pass `--agent module.path:ClassName`. The same CLI can also be run
+without installing the console script:
+
+```bash
+python -m imagent_runtime \
+  "Create a polished benchmark badge titled CLI PASS."
+```
+
+Each CLI run creates `results/<UTC datetime>/` automatically if it does not
+exist. The generated image and trace are saved under:
+
+- `results/<UTC datetime>/images/<UTC datetime>.<ext>`
+- `results/<UTC datetime>/traces/<UTC datetime>.json`
+
+Pass `--run-id` and `--output-dir` only when you need custom artifact names or a
+custom results location. The older `--prompt "..."` flag remains supported, but
+the preferred format is `imagent "..."`.
+
+Run the same flow from Python:
 
 ```python
+import os
 from pathlib import Path
 
 from agent.agent import ImageAgent
+
+os.environ["OPENROUTER_API_KEY"] = "<your-openrouter-api-key>"
 
 agent = ImageAgent()
 agent.setup({}, Path("."))
@@ -174,8 +208,16 @@ result = agent.generate(
 print(result)
 ```
 
-The base agent writes deterministic SVG output and a JSON trace. Real benchmark
-rounds use the pinned `imagent-bench` runner and OpenRouter-backed evaluation.
+The base agent calls OpenRouter's dedicated Image API with
+`google/gemini-3.1-flash-image`, saves the generated image, and writes a JSON
+trace. If `OPENROUTER_API_KEY` is not configured, generation fails clearly
+instead of falling back to any local mock renderer.
+
+`BaseImageAgent` in `agent/agent.py` is the contributor-facing reference
+strategy. `AgentRuntime` lives outside the contributor surface in
+`imagent_runtime/agent_runtime.py` and executes the trajectory: prepare
+artifacts, collect context, construct the prompt, call OpenRouter, persist the
+image, and write the trace.
 
 ## Local Benchmark
 

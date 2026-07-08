@@ -217,5 +217,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Benchmark artifacts
+# Generated CLI and benchmark artifacts
 results/
