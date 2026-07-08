@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "run_id": "bench-20260702-neon-draft",
+  "repository": "imagent-ai/imagent",
+  "commit_sha": "4d0b7a5c3e621fa9d8b50d127d4735c16e8a0f91",
+  "pull_request": {
+    "number": 50,
+    "title": "fix: reject non-boolean vision verifier verdicts",
+    "state": "merged",
+    "html_url": "https://github.com/imagent-ai/imagent/pull/50",
+    "merged_at": "2026-07-02T03:16:56Z",
+    "closed_at": null
+  },
+  "contributor": {
+    "login": "mitchelltop",
+    "name": "mitchelltop",
+    "avatar_url": "https://github.com/mitchelltop.png?size=96",
+    "html_url": "https://github.com/mitchelltop"
+  },
+  "benchmark_version": "openrouter-vision-judge-v0.3.0",
+  "dataset_version": "image-bench-v2026.07.04",
+  "status": "fail",
+  "overall_score": 77.91,
+  "metrics": {
+    "overall_score": 77.91,
+    "case_count": 3,
+    "failed_case_count": 1,
+    "latency_ms": {
+      "min": 2210.0,
+      "max": 3940.0,
+      "mean": 3090.0
+    },
+    "latency_p95_ms": 3890.0,
+    "cost_usd": 0.0716
+  },
+  "cases": [
+    {
+      "id": "product-poster-001",
+      "numeric_id": 1,
+      "prompt": "Create a polished square product poster for an image benchmark agent called Imagent Bench.",
+      "capability": "brand_composition",
+      "status": "pass",
+      "score": 79.4,
+      "latency_ms": 2210.0,
+      "cost_usd": 0.0231,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "pass",
+          "score": 79.4
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 80.0,
+        "visual_quality": 78.0,
+        "text_accuracy": 69.0,
+        "composition": 79.0,
+        "safety_alignment": 96.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "id": "miner-dashboard-002",
+      "numeric_id": 2,
+      "prompt": "Render a clean dashboard card showing miner score improvement, merged PR state, and benchmark deltas.",
+      "capability": "ui_reasoning",
+      "status": "fail",
+      "score": 74.8,
+      "latency_ms": 3120.0,
+      "cost_usd": 0.0242,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "fail",
+          "score": 74.8,
+          "reason": "PR state text and delta label were partially unreadable"
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 76.0,
+        "visual_quality": 77.0,
+        "text_accuracy": 64.0,
+        "composition": 76.0,
+        "safety_alignment": 96.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "id": "typography-badge-003",
+      "numeric_id": 3,
+      "prompt": "Generate a benchmark pass badge with readable typography and clear subnet 74 attribution.",
+      "capability": "text_rendering",
+      "status": "pass",
+      "score": 79.5,
+      "latency_ms": 3940.0,
+      "cost_usd": 0.0243,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "pass",
+          "score": 79.5
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 80.0,
+        "visual_quality": 79.0,
+        "text_accuracy": 69.0,
+        "composition": 80.0,
+        "safety_alignment": 96.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    }
+  ],
+  "ranking": {
+    "baseline_score": 82.44,
+    "baseline_commit": "c2d91f7b45fa3140ad53fe771d9bd50c0d73e216",
+    "candidate_score": 77.91,
+    "delta": -4.53,
+    "label": "score-regression",
+    "merge_eligible": false
+  },
+  "artifacts": [],
+  "logs": [],
+  "configuration": {
+    "agent_manifest": {
+      "id": "neon-draft-agent",
+      "name": "Neon Draft Agent",
+      "version": "0.5.9",
+      "entrypoint": "imagent.agents.neon_draft:Agent"
+    },
+    "agent_config": {
+      "model": "google/gemini-3.1-flash-image",
+      "planner": "low-cost-draft-v1",
+      "evaluation": {
+        "image_judge": {
+          "provider": "openrouter_vision",
+          "model": "openai/gpt-4o-mini"
+        }
+      }
+    },
+    "execution": {
+      "runner": "github-actions",
+      "timeout_seconds": 180
+    }
+  },
+  "policy": {
+    "passed": false,
+    "reasons": [
+      "overall score 77.91 is below required 80.00",
+      "candidate regressed from the current top baseline by 4.53 points"
+    ],
+    "thresholds": {
+      "minimum_score": 80.0,
+      "minimum_delta": 2.5
+    }
+  },
+  "started_at": "2026-07-02T20:31:24Z",
+  "completed_at": "2026-07-02T20:37:55Z",
+  "execution_time_ms": 391000.0
+}

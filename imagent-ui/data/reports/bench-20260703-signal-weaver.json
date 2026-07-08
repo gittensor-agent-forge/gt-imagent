@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "run_id": "bench-20260703-signal-weaver",
+  "repository": "imagent-ai/imagent",
+  "commit_sha": "a18e736c0d5b4d9f8e1a622f17c0b9335d0a7e49",
+  "pull_request": {
+    "number": 52,
+    "title": "fix: handle arithmetic evaluation errors gracefully",
+    "state": "merged",
+    "html_url": "https://github.com/imagent-ai/imagent/pull/52",
+    "merged_at": "2026-07-02T03:17:18Z",
+    "closed_at": null
+  },
+  "contributor": {
+    "login": "mitchelltop",
+    "name": "mitchelltop",
+    "avatar_url": "https://github.com/mitchelltop.png?size=96",
+    "html_url": "https://github.com/mitchelltop"
+  },
+  "benchmark_version": "openrouter-vision-judge-v0.3.0",
+  "dataset_version": "image-bench-v2026.07.04",
+  "status": "pass",
+  "overall_score": 86.13,
+  "metrics": {
+    "overall_score": 86.13,
+    "case_count": 3,
+    "failed_case_count": 0,
+    "latency_ms": {
+      "min": 3380.0,
+      "max": 5860.0,
+      "mean": 4643.3
+    },
+    "latency_p95_ms": 5780.0,
+    "cost_usd": 0.1186
+  },
+  "cases": [
+    {
+      "id": "product-poster-001",
+      "numeric_id": 1,
+      "prompt": "Create a polished square product poster for an image benchmark agent called Imagent Bench.",
+      "capability": "brand_composition",
+      "status": "pass",
+      "score": 86.4,
+      "latency_ms": 3380.0,
+      "cost_usd": 0.0387,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "pass",
+          "score": 86.4
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 88.0,
+        "visual_quality": 87.0,
+        "text_accuracy": 80.0,
+        "composition": 87.0,
+        "safety_alignment": 97.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "id": "miner-dashboard-002",
+      "numeric_id": 2,
+      "prompt": "Render a clean dashboard card showing miner score improvement, merged PR state, and benchmark deltas.",
+      "capability": "ui_reasoning",
+      "status": "pass",
+      "score": 85.2,
+      "latency_ms": 4690.0,
+      "cost_usd": 0.0398,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "pass",
+          "score": 85.2
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 87.0,
+        "visual_quality": 86.0,
+        "text_accuracy": 78.0,
+        "composition": 86.0,
+        "safety_alignment": 97.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "id": "typography-badge-003",
+      "numeric_id": 3,
+      "prompt": "Generate a benchmark pass badge with readable typography and clear subnet 74 attribution.",
+      "capability": "text_rendering",
+      "status": "pass",
+      "score": 86.8,
+      "latency_ms": 5860.0,
+      "cost_usd": 0.0401,
+      "checks": [
+        {
+          "name": "openrouter_vision_judge",
+          "status": "pass",
+          "score": 86.8
+        }
+      ],
+      "artifacts": [],
+      "dimensions": {
+        "prompt_adherence": 88.0,
+        "visual_quality": 88.0,
+        "text_accuracy": 81.0,
+        "composition": 87.0,
+        "safety_alignment": 97.0
+      },
+      "judge": {
+        "provider": "openrouter_vision",
+        "model": "openai/gpt-4o-mini"
+      }
+    }
+  ],
+  "ranking": {
+    "baseline_score": 82.44,
+    "baseline_commit": "c2d91f7b45fa3140ad53fe771d9bd50c0d73e216",
+    "candidate_score": 86.13,
+    "delta": 3.69,
+    "label": "improvement-minor",
+    "merge_eligible": true
+  },
+  "artifacts": [],
+  "logs": [],
+  "configuration": {
+    "agent_manifest": {
+      "id": "signal-weaver",
+      "name": "Signal Weaver",
+      "version": "0.6.8",
+      "entrypoint": "imagent.agents.signal_weaver:Agent"
+    },
+    "agent_config": {
+      "model": "google/gemini-3.1-flash-image",
+      "planner": "judge-aware-expansion-v1",
+      "evaluation": {
+        "image_judge": {
+          "provider": "openrouter_vision",
+          "model": "openai/gpt-4o-mini"
+        }
+      }
+    },
+    "execution": {
+      "runner": "github-actions",
+      "timeout_seconds": 180
+    }
+  },
+  "policy": {
+    "passed": true,
+    "reasons": [],
+    "thresholds": {
+      "minimum_score": 80.0,
+      "minimum_delta": 2.5
+    }
+  },
+  "started_at": "2026-07-03T14:39:44Z",
+  "completed_at": "2026-07-03T14:46:05Z",
+  "execution_time_ms": 381000.0
+}

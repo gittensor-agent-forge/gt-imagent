@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout benchmark
+        uses: actions/checkout@v4
+        with:
+          path: imagent-bench
+
+      - name: Checkout imagent fixture
+        uses: actions/checkout@v4
+        with:
+          repository: imagent-ai/imagent
+          path: imagent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install benchmark package
+        working-directory: imagent-bench
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: imagent-bench
+        run: python -m pytest

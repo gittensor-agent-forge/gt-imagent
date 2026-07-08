@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!/imagent-ui/lib/
+!/imagent-ui/lib/**
 parts/
 sdist/
 var/

@@ -1,0 +1,26 @@
+subnets.giize.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8765
+}
+
+dlcourse.gleeze.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+http://tryimagent.com {
+	redir https://tryimagent.com{uri} permanent
+}
+
+http://www.tryimagent.com {
+	redir https://tryimagent.com{uri} permanent
+}
+
+https://www.tryimagent.com {
+	redir https://tryimagent.com{uri} permanent
+}
+
+https://tryimagent.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3002
+}
