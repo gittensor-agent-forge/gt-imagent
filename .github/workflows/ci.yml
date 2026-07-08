@@ -29,3 +29,29 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+
+  ui:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: imagent-ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: imagent-ui
+        run: npm ci
+
+      - name: Lint UI
+        working-directory: imagent-ui
+        run: npm run lint
+
+      - name: Build UI
+        working-directory: imagent-ui
+        run: npm run build
