@@ -44,7 +44,7 @@ export function AppFooter() {
             <a className="imagent-footer__social-link imagent-footer__social-link--discord" href="https://discord.com/invite/bittensor" rel="noreferrer" target="_blank" aria-label="Discord">
               <DiscordIcon />
             </a>
-            <a className="imagent-footer__social-link imagent-footer__social-link--github" href="https://github.com/imagent-ai/imagent-ui" rel="noreferrer" target="_blank" aria-label="GitHub">
+            <a className="imagent-footer__social-link imagent-footer__social-link--github" href="https://github.com/imagent-ai/imagent" rel="noreferrer" target="_blank" aria-label="GitHub">
               <GitHubIcon />
             </a>
           </div>

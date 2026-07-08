@@ -62,7 +62,7 @@ For the public deployment on `https://tryimagent.com`, the repository includes
 reload Caddy from the server host:
 
 ```bash
-cd ~/Documents/imagent-ai/imagent-ui
+cd ~/Documents/imagent-ai/imagent/imagent-ui
 sudo caddy validate --config "$PWD/deploy/Caddyfile"
 sudo caddy reload --config "$PWD/deploy/Caddyfile"
 ```
@@ -71,7 +71,7 @@ To avoid path mistakes and keep the service config in sync, prefer the bundled
 deploy helper on the server host:
 
 ```bash
-cd ~/Documents/imagent-ai/imagent-ui
+cd ~/Documents/imagent-ai/imagent/imagent-ui
 npm run deploy:caddy
 ```
 
