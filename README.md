@@ -71,10 +71,12 @@ become a reliable foundation for that larger ecosystem.
 - `imagent_runtime/`: stable runtime and CLI infrastructure used to execute
   agents locally and in framework flows. Contributor benchmark PRs should not
   edit this package.
+- `imagent-ui/`: product website and Generation page UI. Generation UI
+  contributor PRs are reviewed manually and are not benchmarked or auto-merged.
 - `winners/`: bot-managed archive of previous winning agents, intended as a
   public reference library for contributors.
 - `.github/workflows/pr-rules.yml`: validates contributor PRs and closes invalid
-  submissions before benchmark spend.
+  agent and Generation UI submissions before review or benchmark spend.
 - `.github/workflows/benchmark.yml`: runs two scheduled benchmark rounds per day.
 - `.github/scripts/round_manager.py`: evaluates PRs, enforces thresholds,
   selects the round winner, promotes winner code, labels non-winners, and merges.
@@ -84,6 +86,15 @@ Benchmark suites, scoring, and evaluation logic live in
 focused on the candidate agent and promotion workflow.
 
 ## Contributor Workflow
+
+Imagent currently supports two contributor tracks:
+
+- `Agent Benchmark`: code submissions that compete in scheduled benchmark rounds.
+- `Generation UI`: design and frontend submissions for the Generation page.
+
+Select exactly one track in the pull request template.
+
+### Agent Benchmark PRs
 
 Contributor benchmark PRs are intentionally constrained:
 
@@ -97,6 +108,28 @@ Contributor benchmark PRs are intentionally constrained:
 This constraint keeps the competition fair. Every candidate is evaluated as an
 agent implementation, not as a test change, dependency change, workflow change,
 or benchmark change.
+
+### Generation UI PRs
+
+Generation UI PRs are constrained differently:
+
+- Touch only approved Generation page UI files under `imagent-ui/`.
+- Follow the completed Home page as the visual standard.
+- Open only one Generation UI PR at a time.
+- Keep the PR focused and small enough for manual review.
+- Include at least one screenshot or video link in the PR description.
+- Do not edit API routes, runtime code, benchmark files, agent files,
+  dependency metadata, deployment config, or unrelated pages.
+
+The PR rules bot closes Generation UI PRs that touch files outside the approved
+Generation page UI surface. If visual evidence is missing, the bot keeps the PR
+open, adds `needs-evidence`, and leaves a comment asking for a screenshot or
+video.
+
+Generation UI PRs receive `generation-ui` and `generation-ui-pass` labels when
+their file scope is valid. They do not receive `pr-rules-pass`, so the scheduled
+agent benchmark workflow will not evaluate or auto-merge them. Maintainers
+review and merge UI PRs manually.
 
 Owner and maintainer PRs are excluded from the round workflow. They are used for
 manual repository maintenance, documentation, infrastructure, benchmark pins, and
@@ -247,10 +280,16 @@ imagent-bench run \
 
 ## Labels
 
-- `pr-rules-pass`: contributor PR passed the submission gate.
-- `invalid-pr`: PR was closed before benchmark because it violated submission
+- `pr-rules-pass`: agent benchmark PR passed the submission gate and may enter
+  scheduled benchmark rounds.
+- `generation-ui`: contributor PR targets the Generation page UI track.
+- `generation-ui-pass`: Generation UI PR passed the automated file-scope gate
+  and is ready for manual review.
+- `needs-evidence`: Generation UI PR is missing a screenshot or video in the PR
+  description.
+- `invalid-pr`: PR was closed because it violated the relevant contributor
   rules.
-- `duplicate-pr`: contributor opened more than one active candidate PR.
+- `duplicate-pr`: contributor opened more than one active PR in the same track.
 - `round-benchmark-running`: candidate is currently being evaluated.
 - `round-eligible`: candidate exceeded the threshold this round.
 - `round-winner`: candidate won the round and was selected for promotion.
