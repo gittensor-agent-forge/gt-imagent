@@ -32,6 +32,7 @@ jobs:
               duplicate: { name: 'duplicate-pr', color: 'd73a4a' },
               needsRebase: { name: 'needs-rebase', color: 'fbca04' }
             };
+            const evidenceCommentMarker = '<!-- imagent:needs-generation-evidence -->';
 
             for (const label of Object.values(labels)) {
               try {
@@ -96,18 +97,22 @@ jobs:
               }
             }
 
-            async function upsertBotComment(marker, body) {
+            async function findBotComment(marker) {
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner,
                 repo,
                 issue_number: pull_number,
                 per_page: 100
               });
-              const existing = comments.find((comment) => (
+              return comments.find((comment) => (
                 comment.user?.type === 'Bot' &&
                 typeof comment.body === 'string' &&
                 comment.body.includes(marker)
               ));
+            }
+
+            async function upsertBotComment(marker, body) {
+              const existing = await findBotComment(marker);
               const fullBody = `${marker}\n${body}`;
               if (existing) {
                 await github.rest.issues.updateComment({
@@ -124,6 +129,19 @@ jobs:
                   body: fullBody
                 });
               }
+            }
+
+            async function updateBotCommentIfPresent(marker, body) {
+              const existing = await findBotComment(marker);
+              if (!existing) {
+                return;
+              }
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body: `${marker}\n${body}`
+              });
             }
 
             function checkedBox(text, label) {
@@ -304,6 +322,14 @@ jobs:
               });
               if (hasGenerationEvidence(body)) {
                 await removeLabel(labels.needsEvidence.name);
+                await updateBotCommentIfPresent(
+                  evidenceCommentMarker,
+                  [
+                    'Evidence detected for this Generation UI PR.',
+                    '',
+                    '`needs-evidence` was removed. This PR is ready for manual UI review once CI passes.'
+                  ].join('\n')
+                );
               } else {
                 await github.rest.issues.addLabels({
                   owner,
@@ -312,7 +338,7 @@ jobs:
                   labels: [labels.needsEvidence.name]
                 });
                 await upsertBotComment(
-                  '<!-- imagent:needs-generation-evidence -->',
+                  evidenceCommentMarker,
                   [
                     'This Generation UI PR is still open, but it needs visual evidence before manual review.',
                     '',
