@@ -25,6 +25,9 @@ jobs:
             const isSameRepoPr = pr.head.repo.full_name === `${owner}/${repo}`;
             const labels = {
               pass: { name: 'pr-rules-pass', color: '2da44e' },
+              generation: { name: 'generation-ui', color: '0969da' },
+              generationPass: { name: 'generation-ui-pass', color: '2da44e' },
+              needsEvidence: { name: 'needs-evidence', color: 'fbca04' },
               invalid: { name: 'invalid-pr', color: 'd73a4a' },
               duplicate: { name: 'duplicate-pr', color: 'd73a4a' },
               needsRebase: { name: 'needs-rebase', color: 'fbca04' }
@@ -53,13 +56,31 @@ jobs:
             const trustedAuthorAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
             const isMaintainerPr = pr.user.login === owner || trustedAuthorAssociations.has(pr.author_association);
             const titlePattern = /^(feat|fix|refactor|docs|test|perf|chore|ci|build|style): .+/;
-            const requiredSections = [
+            const agentRequiredSections = [
               '## Summary',
               '## Motivation',
               '## Changes',
               '## Testing',
               '## Benchmark Impact'
             ];
+            const generationRequiredSections = [
+              '## Summary',
+              '## Motivation',
+              '## Changes',
+              '## Testing'
+            ];
+            const agentPath = 'agent/agent.py';
+            const generationAllowedFiles = new Set([
+              'imagent-ui/app/generation/page.tsx',
+              'imagent-ui/app/components/GenerationChat.tsx',
+              'imagent-ui/app/components/EffectCard.tsx',
+              'imagent-ui/app/components/BorderGlow.tsx',
+              'imagent-ui/app/components/BorderGlow.css',
+              'imagent-ui/app/components/GlareHover.tsx',
+              'imagent-ui/app/components/GlareHover.css',
+              'imagent-ui/app/components/ScrollReveal.tsx',
+              'imagent-ui/app/styles.css'
+            ]);
 
             async function removeLabel(name) {
               try {
@@ -69,39 +90,69 @@ jobs:
               }
             }
 
-            if (isMaintainerPr) {
-              await removeLabel(labels.pass.name);
-              await removeLabel(labels.invalid.name);
-              await removeLabel(labels.duplicate.name);
-              await removeLabel(labels.needsRebase.name);
-              return;
-            }
-
-            const extraFiles = filenames.filter((name) => name !== 'agent/agent.py');
-            const failures = [];
-
-            if (!isSameRepoPr) {
-              failures.push(
-                'Round submissions must be opened from a branch in this repository; fork PRs cannot be evaluated because the bot must use benchmark secrets and push promotion commits.'
-              );
-            }
-            if (!titlePattern.test(pr.title || '')) {
-              failures.push('PR title must use a conventional prefix, for example `feat: improve image planner`.');
-            }
-            for (const section of requiredSections) {
-              if (!body.includes(section)) {
-                failures.push(`PR body must include \`${section}\`.`);
+            async function removeLabels(names) {
+              for (const name of names) {
+                await removeLabel(name);
               }
             }
-            if (!filenames.includes('agent/agent.py')) {
-              failures.push('Contributor benchmark PRs must change `agent/agent.py`.');
+
+            async function upsertBotComment(marker, body) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pull_number,
+                per_page: 100
+              });
+              const existing = comments.find((comment) => (
+                comment.user?.type === 'Bot' &&
+                typeof comment.body === 'string' &&
+                comment.body.includes(marker)
+              ));
+              const fullBody = `${marker}\n${body}`;
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body: fullBody
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  body: fullBody
+                });
+              }
             }
-            if (extraFiles.length) {
-              failures.push(
-                `Contributor benchmark PRs may only change \`agent/agent.py\`; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
-              );
+
+            function checkedBox(text, label) {
+              const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              return new RegExp(`(^|\\n)\\s*-\\s*\\[[xX]\\]\\s*${escaped}\\b`).test(text);
             }
-            if (isSameRepoPr) {
+
+            function hasGenerationEvidence(text) {
+              return /!\[[^\]]*\]\([^)]+\)|https?:\/\/\S*(github\.com\/user-attachments\/assets\/|githubusercontent\.com\/|\.png|\.jpe?g|\.gif|\.webp|\.mp4|\.mov|\.webm|loom\.com\/share\/|youtube\.com\/watch|youtu\.be\/)/i.test(text);
+            }
+
+            function classifyContribution(text, changedFiles) {
+              const checkedAgent = checkedBox(text, 'Agent Benchmark');
+              const checkedGeneration = checkedBox(text, 'Generation UI');
+              const generationOnly = changedFiles.length > 0 && changedFiles.every((name) => generationAllowedFiles.has(name));
+              const touchesGeneration = changedFiles.some((name) => (
+                generationAllowedFiles.has(name) ||
+                name === 'imagent-ui/app/generation/page.tsx'
+              ));
+              if (checkedAgent && checkedGeneration) {
+                return { mode: 'invalid', reason: 'Select only one contribution type: `Agent Benchmark` or `Generation UI`.' };
+              }
+              if (checkedGeneration || (!checkedAgent && (generationOnly || touchesGeneration))) {
+                return { mode: 'generation-ui', reason: '' };
+              }
+              return { mode: 'agent', reason: '' };
+            }
+
+            async function olderDuplicateFor(mode) {
               const openPulls = await github.paginate(github.rest.pulls.list, {
                 owner,
                 repo,
@@ -109,25 +160,113 @@ jobs:
                 per_page: 100
               });
               const currentCreatedAt = new Date(pr.created_at).getTime();
-              const olderDuplicate = openPulls
+              const candidates = openPulls
                 .filter((item) => item.number !== pull_number)
-                .filter((item) => item.head.repo.full_name === `${owner}/${repo}`)
                 .filter((item) => item.user.login === pr.user.login)
                 .filter((item) => {
                   const createdAt = new Date(item.created_at).getTime();
                   return createdAt < currentCreatedAt || (createdAt === currentCreatedAt && item.number < pull_number);
                 })
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              for (const item of candidates) {
+                const otherFiles = await github.paginate(github.rest.pulls.listFiles, {
+                  owner,
+                  repo,
+                  pull_number: item.number,
+                  per_page: 100
+                });
+                const otherClassification = classifyContribution(
+                  item.body || '',
+                  otherFiles.map((file) => file.filename)
+                );
+                if (otherClassification.mode === mode) {
+                  return item;
+                }
+              }
+              return null;
+            }
+
+            if (isMaintainerPr) {
+              await removeLabels([
+                labels.pass.name,
+                labels.generation.name,
+                labels.generationPass.name,
+                labels.needsEvidence.name,
+                labels.invalid.name,
+                labels.duplicate.name,
+                labels.needsRebase.name
+              ]);
+              return;
+            }
+
+            const classification = classifyContribution(body, filenames);
+            const failures = [];
+
+            if (!titlePattern.test(pr.title || '')) {
+              failures.push('PR title must use a conventional prefix, for example `style: refine generation preview` or `feat: improve image planner`.');
+            }
+            if (classification.mode === 'invalid') {
+              failures.push(classification.reason);
+            }
+
+            if (classification.mode === 'generation-ui') {
+              for (const section of generationRequiredSections) {
+                if (!body.includes(section)) {
+                  failures.push(`Generation UI PR body must include \`${section}\`.`);
+                }
+              }
+              const extraFiles = filenames.filter((name) => !generationAllowedFiles.has(name));
+              if (!filenames.length) {
+                failures.push('Generation UI PR must change at least one allowed Generation UI file.');
+              }
+              if (extraFiles.length) {
+                failures.push(
+                  `Generation UI PRs may only touch the approved Generation page UI files; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
+                );
+              }
+            } else if (classification.mode === 'agent') {
+              for (const section of agentRequiredSections) {
+                if (!body.includes(section)) {
+                  failures.push(`Agent benchmark PR body must include \`${section}\`.`);
+                }
+              }
+              if (!isSameRepoPr) {
+                failures.push(
+                  'Agent benchmark submissions must be opened from a branch in this repository; fork PRs cannot be evaluated because the bot must use benchmark secrets and push promotion commits.'
+                );
+              }
+              if (!filenames.includes(agentPath)) {
+                failures.push(`Contributor benchmark PRs must change \`${agentPath}\`.`);
+              }
+              const extraFiles = filenames.filter((name) => name !== agentPath);
+              if (extraFiles.length) {
+                failures.push(
+                  `Contributor benchmark PRs may only change \`${agentPath}\`; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
+                );
+              }
+            }
+
+            if (classification.mode !== 'invalid') {
+              const olderDuplicate = await olderDuplicateFor(classification.mode);
               if (olderDuplicate) {
-                failures.push(`Only one open PR per contributor is allowed per round. Update #${olderDuplicate.number} instead.`);
+                const trackName = classification.mode === 'generation-ui' ? 'Generation UI' : 'agent benchmark';
+                failures.push(`Only one open ${trackName} PR per contributor is allowed. Update #${olderDuplicate.number} instead.`);
               }
             }
 
             if (failures.length) {
-              await removeLabel(labels.pass.name);
-              await removeLabel(labels.needsRebase.name);
+              await removeLabels([
+                labels.pass.name,
+                labels.generation.name,
+                labels.generationPass.name,
+                labels.needsRebase.name,
+                labels.needsEvidence.name
+              ]);
               const labelsToAdd = [labels.invalid.name];
-              if (failures.some((failure) => failure.includes('Only one open PR per contributor'))) {
+              if (classification.mode === 'generation-ui') {
+                labelsToAdd.push(labels.generation.name);
+              }
+              if (failures.some((failure) => failure.startsWith('Only one open '))) {
                 labelsToAdd.push(labels.duplicate.name);
               }
               await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: labelsToAdd });
@@ -136,7 +275,9 @@ jobs:
                 repo,
                 issue_number: pull_number,
                 body: [
-                  'This PR was closed before benchmark because it does not match the contributor rules.',
+                  classification.mode === 'generation-ui'
+                    ? 'This Generation UI PR was closed because it does not match the contributor UI rules.'
+                    : 'This PR was closed before benchmark because it does not match the contributor agent rules.',
                   '',
                   ...failures.map((failure) => `- ${failure}`),
                   '',
@@ -147,8 +288,46 @@ jobs:
               return;
             }
 
-            await removeLabel(labels.invalid.name);
-            await removeLabel(labels.duplicate.name);
-            await removeLabel(labels.needsRebase.name);
-            await removeLabel(labels.pass.name);
+            await removeLabels([
+              labels.invalid.name,
+              labels.duplicate.name,
+              labels.needsRebase.name
+            ]);
+
+            if (classification.mode === 'generation-ui') {
+              await removeLabel(labels.pass.name);
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pull_number,
+                labels: [labels.generation.name, labels.generationPass.name]
+              });
+              if (hasGenerationEvidence(body)) {
+                await removeLabel(labels.needsEvidence.name);
+              } else {
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  labels: [labels.needsEvidence.name]
+                });
+                await upsertBotComment(
+                  '<!-- imagent:needs-generation-evidence -->',
+                  [
+                    'This Generation UI PR is still open, but it needs visual evidence before manual review.',
+                    '',
+                    'Please edit the PR description and add at least one screenshot or video link showing the changed Generation page.',
+                    'Accepted evidence includes GitHub image/video uploads, direct image/video links, Loom, or YouTube links.'
+                  ].join('\n')
+                );
+              }
+              return;
+            }
+
+            await removeLabels([
+              labels.generation.name,
+              labels.generationPass.name,
+              labels.needsEvidence.name,
+              labels.pass.name
+            ]);
             await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: [labels.pass.name] });

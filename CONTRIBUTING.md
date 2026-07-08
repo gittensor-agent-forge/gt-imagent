@@ -1,7 +1,8 @@
 # Contributing
 
 Thanks for contributing to `imagent`. This repository owns the built-in image
-agent implementation.
+agent implementation, the Generation page UI, and the workflow that keeps both
+contribution tracks reviewable.
 
 ## Gittensor Relationship
 
@@ -13,7 +14,8 @@ work can become the next public winner.
 You do not need Discord access or subnet-specific background to participate.
 The GitHub workflow is the source of truth:
 
-- Contributor work enters through PRs against `agent/agent.py`.
+- Agent benchmark work enters through PRs against `agent/agent.py`.
+- Generation page UI work enters through focused PRs under `imagent-ui/`.
 - Automated rounds evaluate eligible PRs against the benchmark.
 - Winning code is copied into `agent/last_winner.py` and archived in `winners/`.
 - Non-winning eligible PRs can stay open for the next round after rebasing.
@@ -27,8 +29,8 @@ Start from an open [issue](https://github.com/imagent-ai/imagent/issues). Issues
 labeled `good first issue` are the easiest entry points, and `crown` marks the
 highest-value work. Comment on an issue to claim it before you start.
 
-Prefer substantive agent code over comments, formatting, or documentation-only
-changes.
+Prefer substantive agent or Generation page UI improvements over comments,
+formatting, or documentation-only changes.
 
 ## Adding or improving an agent
 
@@ -53,31 +55,73 @@ and must not be edited directly.
 Contributor benchmark PRs may not add dependencies. If the base agent needs new
 dependencies or infrastructure changes, a maintainer should open a manual PR.
 
+## Improving the Generation page
+
+The completed Home page is the visual standard for Generation page
+contributions. Generation UI PRs should improve the page while preserving the
+project style, dark product feel, card effects, spacing discipline, and clear
+interaction model.
+
+Generation UI contributor PRs may only touch approved Generation page UI files,
+currently:
+
+- `imagent-ui/app/generation/page.tsx`
+- `imagent-ui/app/components/GenerationChat.tsx`
+- `imagent-ui/app/components/EffectCard.tsx`
+- `imagent-ui/app/components/BorderGlow.tsx`
+- `imagent-ui/app/components/BorderGlow.css`
+- `imagent-ui/app/components/GlareHover.tsx`
+- `imagent-ui/app/components/GlareHover.css`
+- `imagent-ui/app/components/ScrollReveal.tsx`
+- `imagent-ui/app/styles.css`
+
+Do not edit API routes, runtime code, model configuration, benchmark files,
+agent files, dependency metadata, deployment config, unrelated pages, or
+workflows in a Generation UI contributor PR.
+
+Every Generation UI PR must include at least one screenshot or video link in
+the PR description. If evidence is missing, the bot keeps the PR open, adds
+`needs-evidence`, and comments with instructions. UI PRs are never benchmarked
+or auto-merged; maintainers review and merge them manually.
+
 ## Pull request rules
 
 - **One concern per pull request**, as a single atomic commit.
 - Use a conventional commit prefix: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`,
   `perf:`, `chore:`, `ci:`, `build:`, `style:`.
-- Fill in every required pull request template section, including `Benchmark Impact`.
+- Select exactly one contribution type in the PR template: `Agent Benchmark` or
+  `Generation UI`.
+- Fill in every required pull request template section. Use `N/A` for
+  `Benchmark Impact` in Generation UI PRs.
 - Contributor benchmark PRs must change only `agent/agent.py`.
+- Contributor Generation UI PRs must touch only the approved Generation page UI
+  files listed above.
 - Do not edit `agent/last_winner.py`, `winners/`, tests, dependency metadata,
-  workflows, `agent/agent.yaml`, or any other file.
-- Open only one PR at a time. Extra open PRs from the same contributor are
-  closed automatically during PR validation or round evaluation.
-- Round submissions must be opened from branches in this repository. Fork PRs
-  are not evaluated because the bot must use benchmark secrets and push
-  promotion commits.
+  workflows, `agent/agent.yaml`, unrelated UI pages, API routes, or any other
+  file outside the active contribution track.
+- Open only one Agent Benchmark PR and one Generation UI PR at a time. Extra
+  open PRs from the same contributor in the same track are closed
+  automatically during PR validation or round evaluation.
+- Agent round submissions must be opened from branches in this repository. Fork
+  PRs are not evaluated because the bot must use benchmark secrets and push
+  promotion commits. Generation UI PRs may come from forks because they are
+  manually reviewed and are not benchmarked.
 - Owner and maintainer PRs are excluded from the round workflow and are merged
   manually through PRs.
 - PRs that fail these basic rules are automatically labeled `invalid-pr` and closed
-  before benchmark spend is allowed.
+  before benchmark spend or manual UI review time is spent.
 
 ## Benchmark and merge policy
 
-Valid PRs receive the `pr-rules-pass` label. Twice per day, the round benchmark
-evaluates all valid same-repository PRs. The benchmark uses OpenRouter image
-generation and OpenRouter vision judging, then compares each candidate score
-against the current top baseline score configured in the repository.
+Valid Agent Benchmark PRs receive the `pr-rules-pass` label. Twice per day, the
+round benchmark evaluates all valid same-repository agent PRs. The benchmark
+uses OpenRouter image generation and OpenRouter vision judging, then compares
+each candidate score against the current top baseline score configured in the
+repository.
+
+Valid Generation UI PRs receive `generation-ui` and `generation-ui-pass`
+instead. They do not receive `pr-rules-pass`, so the scheduled benchmark
+workflow will not evaluate or auto-merge them.
 
 Merge eligibility requires:
 
