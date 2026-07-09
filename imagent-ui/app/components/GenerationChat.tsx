@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
   ChevronDown,
+  CornerDownLeft,
   Download,
+  Eraser,
   FileJson,
   KeyRound,
   Loader2,
@@ -169,6 +171,34 @@ export function GenerationChat() {
   const [openDropdown, setOpenDropdown] = useState<"composer-model" | "composer-quality" | "settings-model" | null>(null);
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const refocusPrompt = useRef(false);
+
+  // Grow the textarea with its content instead of shipping a native resize grip,
+  // and hand focus back to it whenever the prompt is filled or cleared for the user.
+  useLayoutEffect(() => {
+    const textarea = promptRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+    if (refocusPrompt.current) {
+      refocusPrompt.current = false;
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+  }, [prompt]);
+
+  function applyStarterPrompt(value: string) {
+    refocusPrompt.current = true;
+    setPrompt(value);
+  }
+
+  function clearPrompt() {
+    refocusPrompt.current = true;
+    setPrompt("");
+  }
 
   async function loadRuntimeStatus() {
     try {
@@ -314,6 +344,7 @@ export function GenerationChat() {
   const composerModelChoices = availableModels.length ? availableModels : fallbackModelOptions;
   const selectedComposerModel = composerModelChoices.find((model) => model.id === settings.model);
   const canSubmit = useMemo(() => prompt.trim().length > 0 && !isGenerating && runtimeReady, [prompt, isGenerating, runtimeReady]);
+  const promptLength = prompt.trim().length;
   const canCreateNewSession = !activeSession || activeSession.messages.length > 0 || prompt.trim().length > 0;
   const activeMessages = activeSession?.messages || [];
   const latestAgentMessage = [...activeMessages].reverse().find((message) => message.role === "agent");
@@ -588,10 +619,12 @@ export function GenerationChat() {
           <div className="generation-composer-wrap">
             <form className="generation-composer" onSubmit={submit}>
               <textarea
+                ref={promptRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="Describe the image you want the agent to plan and generate"
-                rows={8}
+                aria-describedby="composer-hint"
+                rows={1}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -599,6 +632,26 @@ export function GenerationChat() {
                   }
                 }}
               />
+              <div className="composer-hint" id="composer-hint">
+                <span className="composer-hint-keys">
+                  <kbd>
+                    <CornerDownLeft size={11} />
+                    Enter
+                  </kbd>
+                  to generate
+                  <kbd>Shift + Enter</kbd>
+                  for a new line
+                </span>
+                {promptLength > 0 ? (
+                  <span className="composer-hint-actions">
+                    <span className="composer-count">{promptLength.toLocaleString()} characters</span>
+                    <button className="composer-clear-button" type="button" onClick={clearPrompt}>
+                      <Eraser size={13} />
+                      Clear
+                    </button>
+                  </span>
+                ) : null}
+              </div>
               <div className="composer-toolbar">
                 <div className="generation-composer-controls">
                   {hasConfiguredOpenRouter ? (
@@ -652,11 +705,20 @@ export function GenerationChat() {
               <small>Click to fill</small>
             </div>
             <div className="prompt-suggestions">
-              {starterPrompts.map((item) => (
-                <button type="button" key={item} onClick={() => setPrompt(item)}>
-                  {item}
-                </button>
-              ))}
+              {starterPrompts.map((item) => {
+                const applied = prompt.trim() === item;
+                return (
+                  <button
+                    className={applied ? "applied" : ""}
+                    type="button"
+                    aria-pressed={applied}
+                    key={item}
+                    onClick={() => applyStarterPrompt(item)}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
