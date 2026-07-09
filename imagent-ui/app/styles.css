@@ -2559,6 +2559,61 @@ textarea:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(1, 113, 249, 0.1), 0 10px 22px rgba(4, 24, 59, 0.06);
 }
 
+.fixed-model-card {
+  align-items: center;
+  background: rgba(225, 236, 249, 0.84);
+  border: 1px solid rgba(82, 112, 140, 0.36);
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 1px 0 rgba(4, 24, 59, 0.18);
+  color: var(--ink);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 48px;
+  padding: 9px 12px;
+}
+
+.fixed-model-card > svg {
+  color: var(--accent);
+}
+
+.fixed-model-card span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fixed-model-card strong,
+.fixed-model-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fixed-model-card strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.fixed-model-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fixed-model-card em {
+  background: rgba(1, 113, 249, 0.1);
+  border: 1px solid rgba(1, 113, 249, 0.16);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
 .api-key-row {
   align-items: center;
   display: grid;
@@ -8801,6 +8856,496 @@ body .generation-shell > :not(.imagent-landing__background-fx) {
   z-index: 1;
 }
 
+body > .generation-settings-backdrop {
+  --generation-bg: var(--landing-bg);
+  --generation-line: var(--landing-line);
+  --generation-line-strong: var(--landing-line-strong);
+  --generation-text: var(--landing-text);
+  --generation-muted: rgba(184, 215, 228, 0.88);
+  --generation-soft: rgba(184, 215, 228, 0.66);
+  --generation-cyan: var(--landing-cyan);
+  --generation-green: #85f5ad;
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(0, 226, 251, 0.18), transparent 34%),
+    radial-gradient(circle at 78% 72%, rgba(4, 120, 232, 0.22), transparent 30%),
+    rgba(2, 8, 18, 0.78);
+  backdrop-filter: blur(18px);
+  display: flex;
+  inset: 0;
+  isolation: isolate;
+  justify-content: center;
+  min-height: 100dvh;
+  overflow-y: auto;
+  padding: 22px;
+  position: fixed;
+  z-index: 2147483000;
+}
+
+body > .generation-settings-backdrop .settings-modal-card {
+  --card-bg: rgba(7, 24, 46, 0.96);
+  --edge-sensitivity: 18;
+  --fill-opacity: 0.2;
+  --glow-padding: 46px;
+  animation: modal-rise 180ms ease both;
+  border-color: rgba(86, 221, 255, 0.28);
+  border-radius: 24px;
+  box-shadow:
+    0 30px 90px rgba(0, 8, 20, 0.64),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--generation-text);
+  max-height: calc(100dvh - 44px);
+  max-width: 660px;
+  width: min(660px, 100%);
+  z-index: 1;
+}
+
+body > .generation-settings-backdrop .settings-modal-card > .border-glow-inner,
+body > .generation-settings-backdrop .settings-modal-card .imagent-effect-card__glare,
+body > .generation-settings-backdrop .settings-modal-card .imagent-effect-card__content {
+  max-height: inherit;
+  min-height: 0;
+}
+
+body > .generation-settings-backdrop .settings-modal-card .imagent-effect-card__glare {
+  overflow: hidden;
+}
+
+body > .generation-settings-backdrop .settings-modal {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(7, 24, 46, 0.96);
+  border: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--generation-text);
+  max-height: inherit;
+  max-width: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  width: 100%;
+}
+
+body > .generation-settings-backdrop .settings-modal header {
+  background:
+    radial-gradient(circle at 86% 0%, rgba(0, 226, 251, 0.26), transparent 32%),
+    linear-gradient(135deg, rgba(9, 35, 65, 0.98), rgba(6, 19, 38, 0.98));
+  border-bottom: 1px solid rgba(86, 221, 255, 0.22);
+  color: var(--generation-text);
+}
+
+body > .generation-settings-backdrop .settings-modal h2 {
+  color: #ffffff;
+  letter-spacing: 0;
+}
+
+body > .generation-settings-backdrop .settings-modal header p {
+  color: var(--generation-muted);
+}
+
+body > .generation-settings-backdrop .settings-title-icon {
+  background: rgba(0, 226, 251, 0.12);
+  border-color: rgba(0, 226, 251, 0.24);
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .settings-modal header button {
+  color: var(--generation-text);
+}
+
+body > .generation-settings-backdrop .settings-modal header button:hover {
+  background: rgba(0, 226, 251, 0.1);
+}
+
+body > .generation-settings-backdrop .settings-modal footer {
+  background: rgba(5, 18, 35, 0.82);
+  border-top: 1px solid rgba(86, 221, 255, 0.18);
+  gap: 10px;
+}
+
+body > .generation-settings-backdrop .settings-modal label,
+body > .generation-settings-backdrop .settings-field {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(5, 18, 35, 0.72);
+  border: 1px solid rgba(86, 221, 255, 0.18);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  color: var(--generation-text);
+  gap: 10px;
+  padding: 15px;
+}
+
+body > .generation-settings-backdrop .settings-modal label > span,
+body > .generation-settings-backdrop .settings-field > span,
+body > .generation-settings-backdrop .field-note {
+  color: var(--generation-muted);
+}
+
+body > .generation-settings-backdrop .settings-modal label > span,
+body > .generation-settings-backdrop .settings-field > span {
+  color: var(--generation-cyan);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body > .generation-settings-backdrop .fixed-model-card {
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(86, 221, 255, 0.22);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 30px rgba(0, 8, 20, 0.18);
+  color: var(--generation-text);
+  min-height: 50px;
+}
+
+body > .generation-settings-backdrop .settings-modal input,
+body > .generation-settings-backdrop .fixed-model-card strong {
+  color: var(--generation-text);
+}
+
+body > .generation-settings-backdrop .settings-modal input {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  min-height: auto;
+  padding: 0;
+}
+
+body > .generation-settings-backdrop .settings-modal input::placeholder,
+body > .generation-settings-backdrop .fixed-model-card small {
+  color: var(--generation-soft);
+}
+
+body > .generation-settings-backdrop .verification-status {
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(86, 221, 255, 0.18);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  height: auto;
+  min-height: 50px;
+  width: 42px;
+}
+
+body > .generation-settings-backdrop .verification-status.verifying {
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .verification-status.valid {
+  background: rgba(133, 245, 173, 0.1);
+  border-color: rgba(133, 245, 173, 0.26);
+  color: var(--generation-green);
+}
+
+body > .generation-settings-backdrop .verification-status.invalid {
+  background: rgba(255, 105, 122, 0.1);
+  border-color: rgba(255, 105, 122, 0.26);
+  color: #ff8795;
+}
+
+body > .generation-settings-backdrop .fixed-model-card > svg {
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .fixed-model-card em {
+  background: rgba(0, 226, 251, 0.1);
+  border-color: rgba(0, 226, 251, 0.24);
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .segmented-control {
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(86, 221, 255, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 12px 30px rgba(0, 8, 20, 0.16);
+  gap: 6px;
+  padding: 6px;
+}
+
+body > .generation-settings-backdrop .segmented-control button {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--generation-muted);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  min-height: 40px;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+body > .generation-settings-backdrop .segmented-control button:hover {
+  background: rgba(0, 226, 251, 0.07);
+  border-color: rgba(0, 226, 251, 0.18);
+  color: #ffffff;
+}
+
+body > .generation-settings-backdrop .segmented-control button.active {
+  background: linear-gradient(135deg, rgba(0, 226, 251, 0.18), rgba(4, 120, 232, 0.16));
+  border-color: rgba(0, 226, 251, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 226, 251, 0.11);
+  color: #ffffff;
+}
+
+body > .generation-settings-backdrop .quality-check {
+  align-items: center;
+  color: var(--generation-cyan);
+  display: inline-flex;
+  height: 14px;
+  justify-content: center;
+  width: 14px;
+}
+
+body > .generation-settings-backdrop .settings-modal footer .secondary-button,
+body > .generation-settings-backdrop .settings-modal footer .primary-button {
+  border-radius: 12px;
+  min-height: 42px;
+}
+
+body > .generation-settings-backdrop .settings-modal footer .secondary-button {
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(86, 221, 255, 0.18);
+  color: var(--generation-muted);
+}
+
+body > .generation-settings-backdrop .settings-modal footer .secondary-button:hover {
+  background: rgba(0, 226, 251, 0.08);
+  border-color: rgba(0, 226, 251, 0.28);
+  color: #ffffff;
+}
+
+body > .generation-settings-backdrop .settings-modal footer .primary-button {
+  background: linear-gradient(135deg, var(--generation-cyan), #0478e8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #03101d;
+}
+
+body > .generation-settings-backdrop .settings-modal footer .primary-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.45);
+  opacity: 0.58;
+}
+
+body > .generation-settings-backdrop .settings-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+body > .generation-settings-backdrop .settings-modal header {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 22px 24px;
+}
+
+body > .generation-settings-backdrop .settings-title-row {
+  gap: 13px;
+}
+
+body > .generation-settings-backdrop .settings-title-icon {
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 226, 251, 0.08);
+  flex-basis: 42px;
+  height: 42px;
+  width: 42px;
+}
+
+body > .generation-settings-backdrop .settings-modal h2 {
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+body > .generation-settings-backdrop .settings-modal header p {
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+body > .generation-settings-backdrop .settings-header-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+body > .generation-settings-backdrop .settings-key-pill {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(86, 221, 255, 0.18);
+  border-radius: 999px;
+  color: var(--generation-muted);
+  display: inline-flex;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  height: 34px;
+  letter-spacing: 0.04em;
+  padding: 0 11px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body > .generation-settings-backdrop .settings-key-pill.valid {
+  background: rgba(133, 245, 173, 0.11);
+  border-color: rgba(133, 245, 173, 0.28);
+  color: var(--generation-green);
+}
+
+body > .generation-settings-backdrop .settings-key-pill.invalid {
+  background: rgba(255, 105, 122, 0.11);
+  border-color: rgba(255, 105, 122, 0.28);
+  color: #ff8795;
+}
+
+body > .generation-settings-backdrop .settings-key-pill.verifying {
+  background: rgba(0, 226, 251, 0.1);
+  border-color: rgba(0, 226, 251, 0.3);
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .settings-modal header button {
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(86, 221, 255, 0.18);
+  border-radius: 12px;
+  height: 36px;
+  width: 36px;
+}
+
+body > .generation-settings-backdrop .settings-modal-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 20px;
+}
+
+body > .generation-settings-backdrop .settings-modal label,
+body > .generation-settings-backdrop .settings-field {
+  margin: 0;
+}
+
+body > .generation-settings-backdrop .settings-field {
+  position: relative;
+}
+
+body > .generation-settings-backdrop .settings-field::after {
+  background: linear-gradient(90deg, rgba(0, 226, 251, 0.18), transparent);
+  content: "";
+  height: 1px;
+  left: 15px;
+  opacity: 0.8;
+  position: absolute;
+  right: 15px;
+  top: 0;
+}
+
+body > .generation-settings-backdrop .api-key-control {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(86, 221, 255, 0.24);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 14px 34px rgba(0, 8, 20, 0.2);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 52px;
+  padding: 0 13px;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+body > .generation-settings-backdrop .api-key-control.has-status {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-right: 10px;
+}
+
+body > .generation-settings-backdrop .api-key-control:focus-within {
+  background: rgba(0, 226, 251, 0.09);
+  border-color: rgba(0, 226, 251, 0.44);
+  box-shadow:
+    0 0 0 1px rgba(0, 226, 251, 0.13),
+    0 16px 36px rgba(0, 226, 251, 0.09);
+}
+
+body > .generation-settings-backdrop .api-key-control > svg {
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .api-key-control .verification-status {
+  align-self: center;
+  background: rgba(0, 226, 251, 0.08);
+  border: 1px solid rgba(0, 226, 251, 0.2);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  height: 30px;
+  min-height: 30px;
+  width: 30px;
+}
+
+body > .generation-settings-backdrop .api-key-control .verification-status.verifying {
+  background: rgba(0, 226, 251, 0.1);
+  border-color: rgba(0, 226, 251, 0.3);
+  color: var(--generation-cyan);
+}
+
+body > .generation-settings-backdrop .api-key-control .verification-status.valid {
+  background: rgba(133, 245, 173, 0.12);
+  border-color: rgba(133, 245, 173, 0.28);
+  color: var(--generation-green);
+}
+
+body > .generation-settings-backdrop .api-key-control .verification-status.invalid {
+  background: rgba(255, 105, 122, 0.12);
+  border-color: rgba(255, 105, 122, 0.3);
+  color: #ff8795;
+}
+
+body > .generation-settings-backdrop .fixed-model-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 54px;
+  padding: 10px 12px;
+}
+
+body > .generation-settings-backdrop .fixed-model-card strong {
+  font-size: 14px;
+}
+
+body > .generation-settings-backdrop .segmented-control {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body > .generation-settings-backdrop .segmented-control button {
+  gap: 7px;
+  padding: 0 8px;
+}
+
+body > .generation-settings-backdrop .settings-modal footer {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 16px 20px 20px;
+}
+
+body > .generation-settings-backdrop .settings-modal footer .secondary-button,
+body > .generation-settings-backdrop .settings-modal footer .primary-button {
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  min-width: 128px;
+}
+
 body .generation-shell .imagent-landing__background-fx {
   inset: 60px 0 0;
 }
@@ -9101,6 +9646,47 @@ body .generation-runs {
     inset: 136px 0 0;
   }
 
+  body > .generation-settings-backdrop {
+    align-items: start;
+    padding: 14px 10px;
+  }
+
+  body > .generation-settings-backdrop .settings-modal-card,
+  body > .generation-settings-backdrop .settings-modal {
+    border-radius: 20px;
+    max-height: calc(100dvh - 28px);
+  }
+
+  body > .generation-settings-backdrop .settings-modal header,
+  body > .generation-settings-backdrop .settings-modal footer {
+    padding: 16px;
+  }
+
+  body > .generation-settings-backdrop .settings-modal header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  body > .generation-settings-backdrop .settings-header-actions {
+    gap: 8px;
+  }
+
+  body > .generation-settings-backdrop .settings-key-pill {
+    display: none;
+  }
+
+  body > .generation-settings-backdrop .settings-modal-body {
+    gap: 12px;
+    padding: 14px 12px 16px;
+  }
+
+  body > .generation-settings-backdrop .settings-modal label,
+  body > .generation-settings-backdrop .settings-field {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 13px;
+  }
+
   body .generation-hero {
     gap: 18px;
     grid-template-columns: minmax(0, 1fr);
@@ -9189,5 +9775,36 @@ body .generation-runs {
   body .generation-preview-orb img {
     height: 64px;
     width: 64px;
+  }
+}
+
+@media (max-width: 520px) {
+  body > .generation-settings-backdrop .verification-status {
+    min-height: 38px;
+    width: 100%;
+  }
+
+  body > .generation-settings-backdrop .segmented-control {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body > .generation-settings-backdrop .fixed-model-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  body > .generation-settings-backdrop .fixed-model-card em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  body > .generation-settings-backdrop .settings-modal footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body > .generation-settings-backdrop .settings-modal footer .secondary-button,
+  body > .generation-settings-backdrop .settings-modal footer .primary-button {
+    min-width: 0;
+    width: 100%;
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   BadgeCheck,
@@ -182,6 +183,15 @@ const starterPrompts: Array<{ icon: LucideIcon; label: string; prompt: string; t
   }
 ];
 
+const modalFocusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
+
 export function GenerationChat() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -193,9 +203,15 @@ export function GenerationChat() {
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusResponse | null>(null);
   const [runtimeError, setRuntimeError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [openDropdown, setOpenDropdown] = useState<"composer-model" | "composer-quality" | "settings-model" | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<"composer-model" | "composer-quality" | null>(null);
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const committedSettingsRef = useRef(settings);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsModalRef = useRef<HTMLElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const refocusPrompt = useRef(false);
 
@@ -238,6 +254,7 @@ export function GenerationChat() {
   }
 
   useEffect(() => {
+    setIsMounted(true);
     const savedSessions = sanitizeSessions(readJson<ChatSession[]>(SESSIONS_KEY, []));
     const savedSettings = readJson<Partial<SavedPlaygroundSettings>>(SETTINGS_KEY, defaultSavedSettings);
     const initialSettings = {
@@ -269,6 +286,81 @@ export function GenerationChat() {
       localStorage.setItem(ACTIVE_SESSION_KEY, activeSessionId);
     }
   }, [activeSessionId]);
+
+  useEffect(() => {
+    committedSettingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const fallbackSettingsButton = settingsButtonRef.current;
+    const focusTimer = window.setTimeout(() => {
+      const focusTarget = settingsCloseButtonRef.current || firstFocusableElement(settingsModalRef.current) || settingsModalRef.current;
+      focusTarget?.focus({ preventScroll: true });
+    }, 0);
+
+    document.body.style.overflow = "hidden";
+
+    function handleModalKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDraftSettings(committedSettingsRef.current);
+        setOpenDropdown(null);
+        setSettingsOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const modal = settingsModalRef.current;
+      if (!modal) {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(modal);
+      if (!focusableElements.length) {
+        event.preventDefault();
+        modal.focus({ preventScroll: true });
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+      if (event.shiftKey) {
+        if (!modal.contains(activeElement) || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus({ preventScroll: true });
+        }
+        return;
+      }
+
+      if (!modal.contains(activeElement) || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus({ preventScroll: true });
+      }
+    }
+
+    window.addEventListener("keydown", handleModalKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleModalKeyDown);
+      const trigger = settingsTriggerRef.current?.isConnected
+        ? settingsTriggerRef.current
+        : fallbackSettingsButton;
+      if (trigger?.isConnected) {
+        trigger.focus({ preventScroll: true });
+      }
+      settingsTriggerRef.current = null;
+    };
+  }, [settingsOpen]);
 
   useEffect(() => {
     const persistedSettings: SavedPlaygroundSettings = {
@@ -357,15 +449,15 @@ export function GenerationChat() {
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
   const hasServerApiKey = Boolean(runtimeStatus?.hasServerApiKey);
-  const runtimeIssues = runtimeError ? [runtimeError] : runtimeStatus?.issues || [];
   const runtimeReady = Boolean(runtimeStatus?.ready);
   const hasConfiguredOpenRouter = hasServerApiKey || settings.apiKey.trim().length > 0;
   const draftApiKey = draftSettings.apiKey.trim();
   const draftUsesServerKey = !draftApiKey && hasServerApiKey;
+  const keyModeLabel = draftApiKey ? "Browser key" : hasServerApiKey ? "Server key" : "Key needed";
+  const apiKeyControlClass = verification.status === "idle" ? "api-key-control" : `api-key-control has-status ${verification.status}`;
   const modelChoices = verification.models.length ? verification.models : availableModels;
-  const canUseVerifiedModels = (draftApiKey.length > 0 || draftUsesServerKey) && verification.status === "valid" && modelChoices.length > 0;
   const canSaveSettings = (!draftApiKey && !draftUsesServerKey) || verification.status === "valid";
-  const selectedDraftModel = modelChoices.find((model) => model.id === draftSettings.model);
+  const settingsModelOption = modelChoices.find((model) => model.id === IMAGENT_GENERATION_MODEL_ID) || fallbackModelOptions[0];
   const composerModelChoices = availableModels.length ? availableModels : fallbackModelOptions;
   const selectedComposerModel = composerModelChoices.find((model) => model.id === settings.model);
   const canSubmit = useMemo(() => prompt.trim().length > 0 && !isGenerating && runtimeReady, [prompt, isGenerating, runtimeReady]);
@@ -446,6 +538,10 @@ export function GenerationChat() {
   }
 
   function openSettings() {
+    const activeElement = document.activeElement;
+    settingsTriggerRef.current = activeElement instanceof HTMLElement && activeElement !== document.body
+      ? activeElement
+      : settingsButtonRef.current;
     setDraftSettings(settings);
     setOpenDropdown(null);
     setSettingsOpen(true);
@@ -588,34 +684,11 @@ export function GenerationChat() {
             </span>
           </div>
         </div>
-        <button className="generation-settings-button" type="button" onClick={openSettings}>
+        <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
           <Settings size={17} />
           Settings
         </button>
       </section>
-
-      {!runtimeStatus && !runtimeError ? (
-        <section className="runtime-alert info">
-          <div className="runtime-alert-title">
-            <Loader2 className="spin" size={16} />
-            <strong>Checking Local Imagent Runtime</strong>
-          </div>
-        </section>
-      ) : null}
-      {runtimeIssues.length > 0 ? (
-        <section className="runtime-alert error">
-          <div className="runtime-alert-title">
-            <AlertCircle size={16} />
-            <strong>Generation Is Unavailable</strong>
-          </div>
-          <p>The local UI runtime is missing required dependencies.</p>
-          <ul>
-            {runtimeIssues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <section className="generation-workspace" aria-label="Generation workspace">
         <div className="generation-panel generation-prompt-panel">
@@ -865,9 +938,9 @@ export function GenerationChat() {
         )}
       </section>
 
-      {settingsOpen ? (
+      {settingsOpen && isMounted ? createPortal(
         <div
-          className="modal-backdrop"
+          className="modal-backdrop generation-settings-backdrop"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
@@ -875,101 +948,103 @@ export function GenerationChat() {
             }
           }}
         >
-          <section className="settings-modal custom-scrollbar" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <header>
-              <div className="settings-title-row">
-                <span className="settings-title-icon">
-                  <Settings size={18} />
-                </span>
-                <div>
-                  <h2 id="settings-title">Generation settings</h2>
-                  <p>OpenRouter-backed Imagent agent</p>
+          <EffectCard animated className="settings-modal-card" glareOpacity={0.12} radius={24}>
+            <section
+              className="settings-modal custom-scrollbar"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-title"
+              ref={settingsModalRef}
+              tabIndex={-1}
+            >
+              <header>
+                <div className="settings-title-row">
+                  <span className="settings-title-icon">
+                    <Settings size={18} />
+                  </span>
+                  <div>
+                    <h2 id="settings-title">Generation settings</h2>
+                    <p>OpenRouter-backed image generation</p>
+                  </div>
                 </div>
-              </div>
-              <button type="button" onClick={cancelSettings} aria-label="Close settings">
-                <X size={18} />
-              </button>
-            </header>
-            <div className={runtimeReady ? "settings-runtime-status ready" : "settings-runtime-status error"}>
-              <strong>Local runtime</strong>
-              <p>{runtimeStatus ? "The UI server can reach the local Imagent runtime." : "Checking the local Imagent runtime."}</p>
-              {runtimeIssues.length > 0 ? (
-                <ul>
-                  {runtimeIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-            <label className="settings-field">
-              <span>OpenRouter API key</span>
-              <div className="api-key-row">
-                <div className="input-with-icon">
-                  <KeyRound size={16} />
-                  <input
-                    type="password"
-                    value={draftSettings.apiKey}
-                    onChange={(event) => setDraftSettings({...draftSettings, apiKey: event.target.value})}
-                    placeholder="sk-or-..."
-                    autoComplete="off"
-                  />
-                </div>
-                <VerificationBadge verification={verification} />
-              </div>
-              <small className="field-note">
-                {hasServerApiKey
-                  ? "A shared server OpenRouter key is enabled for this UI. Leave this blank to use it, or enter a browser key to override it."
-                  : "No shared server key is enabled. Enter a browser key here, or enable IMAGENT_UI_ENABLE_SERVER_KEY_FALLBACK on a trusted private deployment."}
-              </small>
-            </label>
-            <div className="settings-field">
-              <span>Image model</span>
-              <ModelDropdown
-                id="settings-model"
-                disabled={!canUseVerifiedModels}
-                emptyLabel="Verify OpenRouter to load image models"
-                label="Image model"
-                models={canUseVerifiedModels ? modelChoices : []}
-                open={openDropdown === "settings-model"}
-                selectedModel={draftSettings.model}
-                selectedModelName={selectedDraftModel?.name || labelForModel(draftSettings.model, modelChoices)}
-                onOpenChange={(open) => setOpenDropdown(open ? "settings-model" : null)}
-                onSelect={() => setDraftSettings({...draftSettings, model: IMAGENT_GENERATION_MODEL_ID})}
-              />
-              {canUseVerifiedModels ? (
-                <small className="field-note">
-                  {selectedDraftModel?.pricing || "pricing unavailable"} · fixed project model.
-                </small>
-              ) : null}
-            </div>
-            <div className="settings-field">
-              <span>Quality level</span>
-              <div className="segmented-control" role="radiogroup" aria-label="Quality level">
-                {qualityOptions.map((quality) => (
-                  <button
-                    className={draftSettings.quality === quality ? "active" : ""}
-                    type="button"
-                    role="radio"
-                    aria-checked={draftSettings.quality === quality}
-                    key={quality}
-                    onClick={() => setDraftSettings({...draftSettings, quality})}
-                  >
-                    {draftSettings.quality === quality ? <Check size={14} /> : null}
-                    {quality}
+                <div className="settings-header-actions">
+                  <span className={`settings-key-pill ${verification.status}`}>
+                    {keyModeLabel}
+                  </span>
+                  <button type="button" onClick={cancelSettings} aria-label="Close settings" ref={settingsCloseButtonRef}>
+                    <X size={18} />
                   </button>
-                ))}
+                </div>
+              </header>
+              <div className="settings-modal-body">
+                <label className="settings-field settings-field--key">
+                  <span>OpenRouter API key</span>
+                  <div className={apiKeyControlClass}>
+                    <KeyRound size={16} />
+                    <input
+                      type="password"
+                      value={draftSettings.apiKey}
+                      onChange={(event) => setDraftSettings({...draftSettings, apiKey: event.target.value})}
+                      placeholder="sk-or-..."
+                      autoComplete="off"
+                    />
+                    <VerificationBadge verification={verification} />
+                  </div>
+                  <small className="field-note">
+                    {hasServerApiKey
+                      ? "Leave blank to use the shared server key, or enter a browser key for this run."
+                      : "Enter an OpenRouter key to generate images from this browser."}
+                  </small>
+                </label>
+                <div className="settings-field">
+                  <span>Image model</span>
+                  <div className="fixed-model-card" aria-label="Fixed image model">
+                    <Sparkles size={16} />
+                    <span>
+                      <strong>{settingsModelOption.name}</strong>
+                      <small>{IMAGENT_GENERATION_MODEL_ID}</small>
+                    </span>
+                    <em>Fixed</em>
+                  </div>
+                  <small className="field-note">
+                    {verification.status === "valid"
+                      ? `${settingsModelOption.pricing || "pricing unavailable"} · fixed project model.`
+                      : "Verify OpenRouter to confirm access and pricing."}
+                  </small>
+                </div>
+                <div className="settings-field">
+                  <span>Quality level</span>
+                  <div className="segmented-control" role="radiogroup" aria-label="Quality level">
+                    {qualityOptions.map((quality) => (
+                      <button
+                        className={draftSettings.quality === quality ? "active" : ""}
+                        type="button"
+                        role="radio"
+                        aria-checked={draftSettings.quality === quality}
+                        key={quality}
+                        onClick={() => setDraftSettings({...draftSettings, quality})}
+                      >
+                        <span className="quality-check" aria-hidden="true">
+                          {draftSettings.quality === quality ? <Check size={13} /> : null}
+                        </span>
+                        <span>{quality}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-            <footer>
-              <button type="button" className="secondary-button" onClick={cancelSettings}>
-                Cancel
-              </button>
-              <button type="button" className="primary-button" onClick={saveSettings} disabled={!canSaveSettings}>
-                Save settings
-              </button>
-            </footer>
-          </section>
-        </div>
+              <footer>
+                <button type="button" className="secondary-button" onClick={cancelSettings}>
+                  Cancel
+                </button>
+                <button type="button" className="primary-button" onClick={saveSettings} disabled={!canSaveSettings}>
+                  Save settings
+                </button>
+              </footer>
+            </section>
+          </EffectCard>
+        </div>,
+        document.body
       ) : null}
     </div>
   );
@@ -1157,11 +1232,22 @@ function VerificationBadge({ verification }: { verification: VerificationState }
     );
   }
 
-  return (
-    <span className="verification-status idle" aria-label="OpenRouter key not configured" title="OpenRouter key not configured">
-      <KeyRound size={14} />
-    </span>
-  );
+  return null;
+}
+
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(container.querySelectorAll<HTMLElement>(modalFocusableSelector)).filter((element) => {
+    const ariaHidden = element.getAttribute("aria-hidden") === "true";
+    return !ariaHidden && (element.offsetWidth > 0 || element.offsetHeight > 0 || element.getClientRects().length > 0);
+  });
+}
+
+function firstFocusableElement(container: HTMLElement | null) {
+  return getFocusableElements(container)[0] || null;
 }
 
 function newSession(): ChatSession {
