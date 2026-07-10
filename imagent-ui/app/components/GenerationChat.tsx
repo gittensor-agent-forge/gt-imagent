@@ -11,7 +11,6 @@ import {
   KeyRound,
   Loader2,
   MessageSquarePlus,
-  RadioTower,
   Send,
   Settings,
   Sparkles,
@@ -180,6 +179,7 @@ export function GenerationChat() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const committedSettingsRef = useRef(settings);
+  const streamRef = useRef<HTMLDivElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsModalRef = useRef<HTMLElement | null>(null);
@@ -407,35 +407,16 @@ export function GenerationChat() {
   const canSubmit = useMemo(() => prompt.trim().length > 0 && !isGenerating && runtimeReady, [prompt, isGenerating, runtimeReady]);
   const canCreateNewSession = !activeSession || activeSession.messages.length > 0 || prompt.trim().length > 0;
   const activeMessages = activeSession?.messages || [];
+  const activeMessageCount = activeMessages.length;
   const latestAgentMessage = [...activeMessages].reverse().find((message) => message.role === "agent");
-  const latestUserMessage = [...activeMessages].reverse().find((message) => message.role === "user");
   const runtimeState = !runtimeStatus && !runtimeError ? "checking" : runtimeReady ? "ready" : "blocked";
-  const latestMetaItems: string[] = [];
 
-  if (latestAgentMessage?.agentId) {
-    latestMetaItems.push(latestAgentMessage.agentId);
-  }
-  if (latestAgentMessage?.capability) {
-    latestMetaItems.push(latestAgentMessage.capability);
-  }
-  if (latestAgentMessage) {
-    latestMetaItems.push(latestAgentMessage.model || settings.model);
-  }
-  if (latestAgentMessage?.quality) {
-    latestMetaItems.push(latestAgentMessage.quality);
-  }
-  if (typeof latestAgentMessage?.candidateCount === "number" && latestAgentMessage.candidateCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.candidateCount} candidates`);
-  }
-  if (typeof latestAgentMessage?.roundCount === "number" && latestAgentMessage.roundCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.roundCount} rounds`);
-  }
-  if (typeof latestAgentMessage?.latencyMs === "number") {
-    latestMetaItems.push(`${latestAgentMessage.latencyMs.toFixed(0)} ms`);
-  }
-  if (typeof latestAgentMessage?.costUsd === "number") {
-    latestMetaItems.push(`$${latestAgentMessage.costUsd.toFixed(6)}`);
-  }
+  useEffect(() => {
+    const stream = streamRef.current;
+    if (stream) {
+      stream.scrollTop = stream.scrollHeight;
+    }
+  }, [activeSessionId, activeMessageCount, isGenerating]);
 
   function createSession() {
     if (!canCreateNewSession && activeSession) {
@@ -562,6 +543,21 @@ export function GenerationChat() {
     }
   }
 
+  function selectSession(sessionId: string) {
+    setActiveSessionId(sessionId);
+    setOpenDropdown(null);
+  }
+
+  function deleteSession(sessionId: string) {
+    const remaining = sessions.filter((session) => session.id !== sessionId);
+    const next = remaining.length ? remaining : [newSession()];
+    setSessions(next);
+    if (sessionId === activeSessionId) {
+      setActiveSessionId(next[0].id);
+      setPrompt("");
+    }
+  }
+
   function updateSession(sessionId: string, appendedMessages: ChatMessage[], nextTitle?: string) {
     setSessions((current) =>
       current.map((session) => {
@@ -579,76 +575,197 @@ export function GenerationChat() {
   }
 
   return (
-    <div className="imagent-landing generation-shell">
+    <div className="imagent-landing generation-shell generation-studio-shell">
       <LandingBackgroundFx />
       <ScrollReveal />
-      <section className="generation-hero" aria-labelledby="generation-title" data-reveal="fade-up">
-        <div className="generation-hero-copy">
-          <span className="generation-kicker">
-            <Sparkles size={14} />
-            Image Agent Console
-          </span>
-          <h1 id="generation-title" aria-label="Generate With The Current Agent">
-            <span>Generate With</span>
-            <span>The Current</span>
-            <span>Agent</span>
-          </h1>
-          <p>
-            Write one prompt and let Imagent call the fixed OpenRouter image model through the current agent runtime.
-          </p>
-          <div className="generation-status-row" aria-label="Generation status">
-            <span className={`generation-status-pill ${runtimeState}`}>
-              <span className="generation-status-dot" />
-              {runtimeState === "checking" ? "Checking Runtime" : runtimeReady ? "Runtime Ready" : "Runtime Blocked"}
+      <div className="generation-studio" data-reveal="fade-up">
+        <aside className="studio-sidebar" aria-label="Runs">
+          <div className="studio-sidebar-head">
+            <span className="studio-brand">
+              <Sparkles size={16} />
+              Image Studio
             </span>
-            <span className={`generation-status-pill ${hasConfiguredOpenRouter ? "ready" : "warning"}`}>
-              <KeyRound size={14} />
-              {hasConfiguredOpenRouter ? "OpenRouter Ready" : "OpenRouter Needed"}
-            </span>
-            <span className="generation-status-pill">
-              <RadioTower size={14} />
-              Gittensor Powered
-            </span>
-          </div>
-        </div>
-        <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
-          <Settings size={17} />
-          Settings
-        </button>
-      </section>
-
-      <section className="generation-workspace" aria-label="Generation workspace">
-        <div className="generation-panel generation-prompt-panel">
-          <div className="generation-panel-head">
-            <div>
-              <span>Prompt</span>
-              <strong>{activeSession?.title || "New Run"}</strong>
-            </div>
-            <button className="generation-new-run" type="button" onClick={createSession} disabled={!canCreateNewSession}>
+            <button
+              className="studio-new-run"
+              type="button"
+              onClick={createSession}
+              disabled={!canCreateNewSession}
+              title="Start a new run"
+            >
               <MessageSquarePlus size={16} />
-              New Run
+              New
             </button>
           </div>
 
-          <div className="generation-model-card">
-            <div>
-              <span>
-                <Sparkles size={15} />
-                Model
-              </span>
-              <strong>{selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}</strong>
-            </div>
-            <small>Fixed through OpenRouter so agent logic is the variable.</small>
+          <div className="studio-session-list custom-scrollbar">
+            {sessions.map((session) => {
+              const imageCount = session.messages.filter(
+                (message) => message.role === "agent" && message.imageUrl
+              ).length;
+              const isActive = session.id === activeSession?.id;
+              return (
+                <div className={isActive ? "studio-session active" : "studio-session"} key={session.id}>
+                  <button className="studio-session-open" type="button" onClick={() => selectSession(session.id)}>
+                    <span className="studio-session-title">{session.title}</span>
+                    <span className="studio-session-meta">
+                      {session.messages.length ? `${session.messages.length} messages` : "Empty run"}
+                      {imageCount ? ` · ${imageCount} image${imageCount > 1 ? "s" : ""}` : ""}
+                    </span>
+                  </button>
+                  {sessions.length > 1 ? (
+                    <button
+                      className="studio-session-delete"
+                      type="button"
+                      aria-label="Delete run"
+                      title="Delete run"
+                      onClick={() => deleteSession(session.id)}
+                    >
+                      <X size={14} />
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="generation-composer-wrap">
-            <form className="generation-composer" onSubmit={submit}>
+          <div className="studio-sidebar-foot">
+            <div className="studio-status" aria-label="Generation status">
+              <span className={`generation-status-pill ${runtimeState}`}>
+                <span className="generation-status-dot" />
+                {runtimeState === "checking" ? "Checking Runtime" : runtimeReady ? "Runtime Ready" : "Runtime Blocked"}
+              </span>
+              <span className={`generation-status-pill ${hasConfiguredOpenRouter ? "ready" : "warning"}`}>
+                <KeyRound size={13} />
+                {hasConfiguredOpenRouter ? "OpenRouter Ready" : "OpenRouter Needed"}
+              </span>
+            </div>
+            <button className="studio-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
+              <Settings size={16} />
+              Settings
+            </button>
+          </div>
+        </aside>
+
+        <main className="studio-main">
+          <header className="studio-main-head">
+            <div className="studio-main-title">
+              <span className="generation-kicker">
+                <Sparkles size={13} />
+                Image Agent Console
+              </span>
+              <strong>{activeSession?.title || "New Run"}</strong>
+            </div>
+            <div className="studio-main-tools">
+              <span className="studio-model-chip" title={settings.model}>
+                <Sparkles size={14} />
+                {selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}
+              </span>
+              <span className={isGenerating ? "generation-preview-badge running" : "generation-preview-badge"}>
+                {isGenerating ? "Running" : latestAgentMessage?.imageUrl ? "Ready" : "Waiting"}
+              </span>
+            </div>
+          </header>
+
+          <div className="studio-stream custom-scrollbar" ref={streamRef}>
+            {activeMessageCount === 0 && !isGenerating ? (
+              <div className="studio-empty">
+                <span className="studio-empty-orb" aria-hidden="true">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/brand/imagent-ai-avatar.jpg" alt="" />
+                </span>
+                <h1>Generate With The Current Agent</h1>
+                <p>Describe an image and the fixed OpenRouter model plans and renders it through the current agent runtime.</p>
+                <div className="studio-starters">
+                  {starterPrompts.map((item) => (
+                    <button type="button" key={item} onClick={() => setPrompt(item)}>
+                      <Sparkles size={14} />
+                      <span>{item}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="studio-thread">
+                {activeMessages.map((message) =>
+                  message.role === "user" ? (
+                    <div className="studio-turn studio-turn-user" key={message.id}>
+                      <div className="studio-bubble">{message.content}</div>
+                    </div>
+                  ) : (
+                    <div className="studio-turn studio-turn-agent" key={message.id}>
+                      <span className="studio-turn-avatar" aria-hidden="true">
+                        <Sparkles size={15} />
+                      </span>
+                      <div className="studio-turn-body">
+                        {message.error ? (
+                          <div className="studio-agent-error">
+                            <AlertCircle size={18} />
+                            <div>
+                              <strong>Generation failed</strong>
+                              <p>{message.error}</p>
+                            </div>
+                          </div>
+                        ) : message.imageUrl ? (
+                          <div className="studio-agent-result">
+                            <div className="studio-agent-image">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={message.imageUrl} alt="Generated image" />
+                            </div>
+                            <div className="studio-agent-actions">
+                              <a href={message.imageUrl} download={message.imageFileName || "imagent-output.png"}>
+                                <Download size={14} />
+                                Download
+                              </a>
+                              {message.traceUrl ? (
+                                <a href={message.traceUrl} target="_blank" rel="noreferrer">
+                                  <FileJson size={14} />
+                                  Trace
+                                </a>
+                              ) : null}
+                            </div>
+                            {metaItemsForMessage(message, settings.model).length > 0 ? (
+                              <div className="studio-agent-meta">
+                                {metaItemsForMessage(message, settings.model).map((item, index) => (
+                                  <span key={index}>{item}</span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="studio-bubble studio-bubble-agent">{message.content}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                )}
+                {isGenerating ? (
+                  <div className="studio-turn studio-turn-agent" key="generating">
+                    <span className="studio-turn-avatar" aria-hidden="true">
+                      <Loader2 className="spin" size={15} />
+                    </span>
+                    <div className="studio-turn-body">
+                      <div className="studio-agent-generating">
+                        <Loader2 className="spin" size={16} />
+                        Planning the prompt and rendering the image
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <div className="studio-composer-dock">
+            <form className="generation-composer studio-composer" onSubmit={submit}>
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="Describe the image you want the agent to plan and generate"
-                rows={8}
+                rows={3}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    return;
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.currentTarget.form?.requestSubmit();
@@ -701,91 +818,8 @@ export function GenerationChat() {
               </div>
             </form>
           </div>
-
-          <div className="generation-suggestions">
-            <div className="generation-suggestions-head">
-              <span>Starter Prompts</span>
-              <small>Click to fill</small>
-            </div>
-            <div className="prompt-suggestions">
-              {starterPrompts.map((item) => (
-                <button type="button" key={item} onClick={() => setPrompt(item)}>
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="generation-panel generation-preview-panel">
-          <div className="generation-panel-head">
-            <div>
-              <span>Preview</span>
-              <strong>Latest Agent Output</strong>
-            </div>
-            <span className={isGenerating ? "generation-preview-badge running" : "generation-preview-badge"}>
-              {isGenerating ? "Running" : latestAgentMessage?.imageUrl ? "Ready" : "Waiting"}
-            </span>
-          </div>
-
-          <div className="generation-preview-surface">
-            {isGenerating ? (
-              <div className="generation-preview-state generation-preview-loading">
-                <Loader2 className="spin" size={30} />
-                <strong>Agent Is Generating</strong>
-                <p>Planning the prompt and calling the OpenRouter image model.</p>
-              </div>
-            ) : latestAgentMessage?.imageUrl ? (
-              <div className="generation-preview-result">
-                <div className="generation-preview-image">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={latestAgentMessage.imageUrl} alt="Generated image" />
-                </div>
-                {latestUserMessage ? (
-                  <div className="generation-latest-prompt">
-                    <span>Prompt</span>
-                    <p>{latestUserMessage.content}</p>
-                  </div>
-                ) : null}
-                <div className="generation-preview-actions">
-                  <a href={latestAgentMessage.imageUrl} download={latestAgentMessage.imageFileName || "imagent-output.png"}>
-                    <Download size={15} />
-                    Download Image
-                  </a>
-                  {latestAgentMessage.traceUrl ? (
-                    <a href={latestAgentMessage.traceUrl} target="_blank" rel="noreferrer">
-                      <FileJson size={15} />
-                      View Trace
-                    </a>
-                  ) : null}
-                </div>
-                {latestMetaItems.length > 0 ? (
-                  <div className="generation-preview-meta">
-                    {latestMetaItems.map((item) => (
-                      <span key={item}>{item}</span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : latestAgentMessage?.error ? (
-              <div className="generation-preview-state generation-preview-error">
-                <AlertCircle size={30} />
-                <strong>Generation Failed</strong>
-                <p>{latestAgentMessage.error}</p>
-              </div>
-            ) : (
-              <div className="generation-preview-state generation-preview-empty">
-                <div className="generation-preview-orb">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/brand/imagent-ai-avatar.jpg" alt="" />
-                </div>
-                <strong>Image Preview</strong>
-                <p>Your generated image and trace will appear here after the agent run.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+        </main>
+      </div>
 
       {settingsOpen && isMounted ? createPortal(
         <div
@@ -1112,6 +1146,36 @@ function newSession(): ChatSession {
 
 function titleFromPrompt(prompt: string) {
   return prompt.length > 42 ? `${prompt.slice(0, 42)}...` : prompt;
+}
+
+function metaItemsForMessage(message: ChatMessage, fallbackModel: string): string[] {
+  const items: string[] = [];
+  if (message.agentId) {
+    items.push(message.agentId);
+  }
+  if (message.capability) {
+    items.push(message.capability);
+  }
+  const model = message.model || fallbackModel;
+  if (model) {
+    items.push(model);
+  }
+  if (message.quality) {
+    items.push(message.quality);
+  }
+  if (typeof message.candidateCount === "number" && message.candidateCount > 0) {
+    items.push(`${message.candidateCount} candidates`);
+  }
+  if (typeof message.roundCount === "number" && message.roundCount > 0) {
+    items.push(`${message.roundCount} rounds`);
+  }
+  if (typeof message.latencyMs === "number") {
+    items.push(`${message.latencyMs.toFixed(0)} ms`);
+  }
+  if (typeof message.costUsd === "number") {
+    items.push(`$${message.costUsd.toFixed(6)}`);
+  }
+  return items;
 }
 
 function labelForModel(model: string, models: OpenRouterModelOption[]) {
