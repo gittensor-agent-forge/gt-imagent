@@ -4,17 +4,26 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  BadgeCheck,
   Check,
   ChevronDown,
+  Clock3,
+  Coins,
   Download,
   FileJson,
+  Gauge,
   KeyRound,
+  LayoutGrid,
   Loader2,
   MessageSquarePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   RadioTower,
+  RefreshCw,
   Send,
   Settings,
   Sparkles,
+  Wand2,
   X
 } from "lucide-react";
 import { EffectCard, LandingBackgroundFx } from "@/app/components/EffectCard";
@@ -148,12 +157,36 @@ const emptyVerification: VerificationState = {
   models: []
 };
 
-const starterPrompts = [
-  "Create a cinematic square poster for an open-source image agent leaderboard.",
-  "Design a clean benchmark pass badge with a green check mark.",
-  "Generate a product card for a miner contribution dashboard.",
-  "Make a polished visual explaining PR benchmark automation."
-];
+const starterCards = [
+  {
+    id: "poster",
+    icon: Sparkles,
+    label: "Poster",
+    title: "Cinematic leaderboard",
+    prompt: "Create a cinematic square poster for an open-source image agent leaderboard."
+  },
+  {
+    id: "badge",
+    icon: BadgeCheck,
+    label: "Badge",
+    title: "Benchmark pass mark",
+    prompt: "Design a clean benchmark pass badge with a green check mark."
+  },
+  {
+    id: "dashboard",
+    icon: LayoutGrid,
+    label: "Product",
+    title: "Miner dashboard card",
+    prompt: "Generate a product card for a miner contribution dashboard."
+  },
+  {
+    id: "automation",
+    icon: Wand2,
+    label: "Explain",
+    title: "PR automation visual",
+    prompt: "Make a polished visual explaining PR benchmark automation."
+  }
+] as const;
 
 const modalFocusableSelector = [
   "a[href]",
@@ -178,14 +211,19 @@ export function GenerationChat() {
   const [openDropdown, setOpenDropdown] = useState<"composer-model" | "composer-quality" | null>(null);
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCheckingRuntime, setIsCheckingRuntime] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
+  const [selectedStarterId, setSelectedStarterId] = useState<string | null>(null);
   const committedSettingsRef = useRef(settings);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsModalRef = useRef<HTMLElement | null>(null);
   const settingsTriggerRef = useRef<HTMLElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   async function loadRuntimeStatus() {
+    setIsCheckingRuntime(true);
     try {
       const response = await fetch("/api/playground/status", { cache: "no-store" });
       const data = (await response.json()) as RuntimeStatusResponse;
@@ -194,6 +232,8 @@ export function GenerationChat() {
     } catch (error) {
       setRuntimeStatus(null);
       setRuntimeError(error instanceof Error ? error.message : "Failed to check the Imagent runtime.");
+    } finally {
+      setIsCheckingRuntime(false);
     }
   }
 
@@ -234,6 +274,15 @@ export function GenerationChat() {
   useEffect(() => {
     committedSettingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 280)}px`;
+  }, [prompt]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -410,32 +459,28 @@ export function GenerationChat() {
   const latestAgentMessage = [...activeMessages].reverse().find((message) => message.role === "agent");
   const latestUserMessage = [...activeMessages].reverse().find((message) => message.role === "user");
   const runtimeState = !runtimeStatus && !runtimeError ? "checking" : runtimeReady ? "ready" : "blocked";
-  const latestMetaItems: string[] = [];
-
-  if (latestAgentMessage?.agentId) {
-    latestMetaItems.push(latestAgentMessage.agentId);
-  }
-  if (latestAgentMessage?.capability) {
-    latestMetaItems.push(latestAgentMessage.capability);
-  }
-  if (latestAgentMessage) {
-    latestMetaItems.push(latestAgentMessage.model || settings.model);
-  }
-  if (latestAgentMessage?.quality) {
-    latestMetaItems.push(latestAgentMessage.quality);
-  }
-  if (typeof latestAgentMessage?.candidateCount === "number" && latestAgentMessage.candidateCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.candidateCount} candidates`);
-  }
-  if (typeof latestAgentMessage?.roundCount === "number" && latestAgentMessage.roundCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.roundCount} rounds`);
-  }
-  if (typeof latestAgentMessage?.latencyMs === "number") {
-    latestMetaItems.push(`${latestAgentMessage.latencyMs.toFixed(0)} ms`);
-  }
-  if (typeof latestAgentMessage?.costUsd === "number") {
-    latestMetaItems.push(`$${latestAgentMessage.costUsd.toFixed(6)}`);
-  }
+  const runtimeIssues = runtimeError
+    ? [runtimeError]
+    : (runtimeStatus?.issues || []).filter((issue) => typeof issue === "string" && issue.trim().length > 0);
+  const previewHasImage = Boolean(latestAgentMessage?.imageUrl);
+  const previewFailed = !isGenerating && !previewHasImage && Boolean(latestAgentMessage?.error);
+  const previewBadgeLabel = isGenerating ? "Running" : previewHasImage ? "Ready" : previewFailed ? "Failed" : "Waiting";
+  const previewBadgeClass = `generation-preview-badge${isGenerating ? " running" : previewFailed ? " failed" : previewHasImage ? " ready" : ""}`;
+  const savedRuns = sessions.filter((session) => session.messages.length > 0);
+  const resultMetrics = [
+    latestAgentMessage?.agentId ? { icon: Sparkles, label: "Agent", value: latestAgentMessage.agentId } : null,
+    latestAgentMessage?.capability ? { icon: Gauge, label: "Capability", value: latestAgentMessage.capability } : null,
+    latestAgentMessage?.model || settings.model
+      ? { icon: RadioTower, label: "Model", value: latestAgentMessage?.model || settings.model }
+      : null,
+    latestAgentMessage?.quality ? { icon: LayoutGrid, label: "Quality", value: latestAgentMessage.quality } : null,
+    typeof latestAgentMessage?.latencyMs === "number"
+      ? { icon: Clock3, label: "Latency", value: `${latestAgentMessage.latencyMs.toFixed(0)} ms` }
+      : null,
+    typeof latestAgentMessage?.costUsd === "number"
+      ? { icon: Coins, label: "Cost", value: `$${latestAgentMessage.costUsd.toFixed(6)}` }
+      : null
+  ].filter((metric): metric is { icon: typeof Sparkles; label: string; value: string } => metric !== null);
 
   function createSession() {
     if (!canCreateNewSession && activeSession) {
@@ -447,6 +492,7 @@ export function GenerationChat() {
     setSessions((current) => [session, ...current]);
     setActiveSessionId(session.id);
     setPrompt("");
+    setSelectedStarterId(null);
   }
 
   function saveSettings() {
@@ -479,6 +525,48 @@ export function GenerationChat() {
     setDraftSettings(settings);
     setOpenDropdown(null);
     setSettingsOpen(false);
+  }
+
+  function applyStarterPrompt(card: (typeof starterCards)[number]) {
+    setSelectedStarterId(card.id);
+    setPrompt(card.prompt);
+    window.requestAnimationFrame(() => {
+      const textarea = composerTextareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus({ preventScroll: true });
+      const end = card.prompt.length;
+      textarea.setSelectionRange(end, end);
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 280)}px`;
+    });
+  }
+
+  function clearPrompt() {
+    setPrompt("");
+    setSelectedStarterId(null);
+    composerTextareaRef.current?.focus({ preventScroll: true });
+  }
+
+  function selectSession(sessionId: string) {
+    setActiveSessionId(sessionId);
+    setPrompt("");
+    setSelectedStarterId(null);
+  }
+
+  function formatRelativeTime(value: string) {
+    const deltaMs = Date.now() - new Date(value).getTime();
+    const minutes = Math.max(1, Math.round(deltaMs / 60000));
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) {
+      return `${hours}h ago`;
+    }
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
   }
 
   function updateComposerModel(model: string) {
@@ -579,75 +667,149 @@ export function GenerationChat() {
   }
 
   return (
-    <div className="imagent-landing generation-shell">
+    <div className="imagent-landing generation-shell generation-studio">
       <LandingBackgroundFx />
       <ScrollReveal />
-      <section className="generation-hero" aria-labelledby="generation-title" data-reveal="fade-up">
-        <div className="generation-hero-copy">
+
+      <header className="generation-studio-header" data-reveal="fade-up">
+        <div className="generation-studio-header-copy">
           <span className="generation-kicker">
             <Sparkles size={14} />
-            Image Agent Console
+            Agent Bench Console
           </span>
-          <h1 id="generation-title" aria-label="Generate With The Current Agent">
-            <span>Generate With</span>
-            <span>The Current</span>
-            <span>Agent</span>
-          </h1>
-          <p>
-            Write one prompt and let Imagent call the fixed OpenRouter image model through the current agent runtime.
-          </p>
-          <div className="generation-status-row" aria-label="Generation status">
-            <span className={`generation-status-pill ${runtimeState}`}>
-              <span className="generation-status-dot" />
-              {runtimeState === "checking" ? "Checking Runtime" : runtimeReady ? "Runtime Ready" : "Runtime Blocked"}
-            </span>
-            <span className={`generation-status-pill ${hasConfiguredOpenRouter ? "ready" : "warning"}`}>
-              <KeyRound size={14} />
-              {hasConfiguredOpenRouter ? "OpenRouter Ready" : "OpenRouter Needed"}
-            </span>
-            <span className="generation-status-pill">
-              <RadioTower size={14} />
-              Gittensor Powered
-            </span>
+          <div className="generation-studio-title-row">
+            <h1 id="generation-title">Generation Studio</h1>
+            <p>Run the current agent against the fixed OpenRouter image model.</p>
           </div>
         </div>
-        <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
-          <Settings size={17} />
-          Settings
-        </button>
-      </section>
+        <div className="generation-studio-header-rail" aria-label="Generation status">
+          <span className={`generation-status-pill ${runtimeState}`}>
+            <span className="generation-status-dot" />
+            {runtimeState === "checking" ? "Checking Runtime" : runtimeReady ? "Runtime Ready" : "Runtime Blocked"}
+          </span>
+          {hasConfiguredOpenRouter ? (
+            <span className="generation-status-pill ready">
+              <KeyRound size={14} />
+              OpenRouter Ready
+            </span>
+          ) : (
+            <button className="generation-status-pill warning generation-status-action" type="button" onClick={openSettings}>
+              <KeyRound size={14} />
+              OpenRouter Needed
+            </button>
+          )}
+          <span className="generation-status-pill">
+            <RadioTower size={14} />
+            Gittensor Powered
+          </span>
+          <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
+            <Settings size={17} />
+            Settings
+          </button>
+        </div>
+      </header>
 
-      <section className="generation-workspace" aria-label="Generation workspace">
-        <div className="generation-panel generation-prompt-panel">
-          <div className="generation-panel-head">
+      {runtimeState === "blocked" ? (
+        <div className="generation-runtime-alert" role="alert" data-reveal="fade-up" data-reveal-delay="1">
+          <span className="generation-runtime-alert-icon" aria-hidden="true">
+            <AlertCircle size={18} />
+          </span>
+          <div className="generation-runtime-alert-copy">
+            <strong>Runtime Blocked</strong>
+            {runtimeIssues.length > 0 ? (
+              <ul>
+                {runtimeIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>The Imagent runtime is not ready, so generation stays disabled.</p>
+            )}
+          </div>
+          <button
+            className="generation-runtime-retry"
+            type="button"
+            onClick={() => void loadRuntimeStatus()}
+            disabled={isCheckingRuntime}
+          >
+            {isCheckingRuntime ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+            {isCheckingRuntime ? "Checking" : "Retry Check"}
+          </button>
+        </div>
+      ) : null}
+
+      <section className="generation-studio-grid" aria-label="Generation workspace" data-reveal="fade-up" data-reveal-delay="2">
+        <aside className={`generation-studio-rail ${railOpen ? "is-open" : "is-collapsed"}`} aria-label="Saved runs">
+          <div className="generation-studio-rail-head">
             <div>
-              <span>Prompt</span>
-              <strong>{activeSession?.title || "New Run"}</strong>
+              <span>Saved Runs</span>
+              <strong>{savedRuns.length} total</strong>
             </div>
-            <button className="generation-new-run" type="button" onClick={createSession} disabled={!canCreateNewSession}>
-              <MessageSquarePlus size={16} />
-              New Run
+            <button
+              className="generation-rail-toggle"
+              type="button"
+              aria-label={railOpen ? "Collapse run rail" : "Expand run rail"}
+              onClick={() => setRailOpen((current) => !current)}
+            >
+              {railOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
           </div>
+          {railOpen ? (
+            <>
+              <button className="generation-new-run generation-studio-new-run" type="button" onClick={createSession} disabled={!canCreateNewSession}>
+                <MessageSquarePlus size={16} />
+                New Run
+              </button>
+              <div className="generation-studio-run-list custom-scrollbar">
+                {savedRuns.length === 0 ? (
+                  <p className="generation-studio-run-empty">Runs appear here after your first generation.</p>
+                ) : (
+                  savedRuns.map((session) => {
+                    const isActive = session.id === activeSession?.id;
+                    return (
+                      <button
+                        className={`generation-studio-run-card ${isActive ? "is-active" : ""}`}
+                        key={session.id}
+                        type="button"
+                        onClick={() => selectSession(session.id)}
+                      >
+                        <span>{session.title}</span>
+                        <small>{formatRelativeTime(session.updatedAt)}</small>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          ) : null}
+        </aside>
 
-          <div className="generation-model-card">
-            <div>
-              <span>
+        <div className="generation-studio-main">
+          <EffectCard animated className="generation-studio-panel generation-studio-composer" radius={24} glareOpacity={0.12}>
+            <div className="generation-panel-head">
+              <div>
+                <span>Prompt</span>
+                <strong>{activeSession?.title || "New Run"}</strong>
+              </div>
+              <div className="generation-model-chip">
                 <Sparkles size={15} />
-                Model
-              </span>
-              <strong>{selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}</strong>
+                <span>{selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}</span>
+              </div>
             </div>
-            <small>Fixed through OpenRouter so agent logic is the variable.</small>
-          </div>
 
-          <div className="generation-composer-wrap">
-            <form className="generation-composer" onSubmit={submit}>
+            <form className="generation-composer generation-studio-composer-form" onSubmit={submit}>
               <textarea
+                ref={composerTextareaRef}
                 value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Describe the image you want the agent to plan and generate"
-                rows={8}
+                onChange={(event) => {
+                  const nextPrompt = event.target.value;
+                  setPrompt(nextPrompt);
+                  if (selectedStarterId && nextPrompt !== starterCards.find((card) => card.id === selectedStarterId)?.prompt) {
+                    setSelectedStarterId(null);
+                  }
+                }}
+                placeholder="Describe the image you want the current agent to plan and generate"
+                rows={3}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -655,6 +817,19 @@ export function GenerationChat() {
                   }
                 }}
               />
+              <div className="composer-hint-row">
+                <small className="composer-keyboard-hint">
+                  <kbd>Enter</kbd> generate · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line
+                </small>
+                {prompt.length > 0 ? (
+                  <div className="composer-hint-actions">
+                    <small className="composer-char-count">{prompt.length} chars</small>
+                    <button className="composer-clear-button" type="button" onClick={clearPrompt}>
+                      Clear
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <div className="composer-toolbar">
                 <div className="generation-composer-controls">
                   {hasConfiguredOpenRouter ? (
@@ -700,90 +875,121 @@ export function GenerationChat() {
                 </button>
               </div>
             </form>
-          </div>
 
-          <div className="generation-suggestions">
-            <div className="generation-suggestions-head">
-              <span>Starter Prompts</span>
-              <small>Click to fill</small>
-            </div>
-            <div className="prompt-suggestions">
-              {starterPrompts.map((item) => (
-                <button type="button" key={item} onClick={() => setPrompt(item)}>
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="generation-panel generation-preview-panel">
-          <div className="generation-panel-head">
-            <div>
-              <span>Preview</span>
-              <strong>Latest Agent Output</strong>
-            </div>
-            <span className={isGenerating ? "generation-preview-badge running" : "generation-preview-badge"}>
-              {isGenerating ? "Running" : latestAgentMessage?.imageUrl ? "Ready" : "Waiting"}
-            </span>
-          </div>
-
-          <div className="generation-preview-surface">
-            {isGenerating ? (
-              <div className="generation-preview-state generation-preview-loading">
-                <Loader2 className="spin" size={30} />
-                <strong>Agent Is Generating</strong>
-                <p>Planning the prompt and calling the OpenRouter image model.</p>
+            <div className="generation-studio-starters">
+              <div className="generation-suggestions-head">
+                <span>Starter Prompts</span>
+                <small>Home card language</small>
               </div>
-            ) : latestAgentMessage?.imageUrl ? (
-              <div className="generation-preview-result">
-                <div className="generation-preview-image">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={latestAgentMessage.imageUrl} alt="Generated image" />
+              <div className="generation-studio-starter-grid">
+                {starterCards.map((card, index) => {
+                  const Icon = card.icon;
+                  const isSelected = selectedStarterId === card.id;
+                  return (
+                    <EffectCard
+                      animated={isSelected}
+                      className={`generation-studio-starter-card ${isSelected ? "is-selected" : ""}`}
+                      key={card.id}
+                      radius={20}
+                      glareOpacity={0.1}
+                    >
+                      <button type="button" onClick={() => applyStarterPrompt(card)} aria-pressed={isSelected}>
+                        <div className="generation-studio-starter-head">
+                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <Icon size={18} />
+                        </div>
+                        <small>{card.label}</small>
+                        <strong>{card.title}</strong>
+                        <p>{card.prompt}</p>
+                      </button>
+                    </EffectCard>
+                  );
+                })}
+              </div>
+            </div>
+          </EffectCard>
+
+          <EffectCard animated className="generation-studio-panel generation-studio-preview" radius={24} glareOpacity={0.12}>
+            <div className="generation-panel-head">
+              <div>
+                <span>Preview</span>
+                <strong>Agent Output</strong>
+              </div>
+              <span className={previewBadgeClass}>{previewBadgeLabel}</span>
+            </div>
+
+            <div className={`generation-preview-surface generation-studio-stage ${isGenerating ? "is-running" : previewFailed ? "is-failed" : previewHasImage ? "is-ready" : "is-empty"}`}>
+              {isGenerating ? (
+                <div className="generation-preview-state generation-preview-loading">
+                  <Loader2 className="spin" size={30} />
+                  <strong>Agent Is Generating</strong>
+                  <p>Planning the prompt and calling the OpenRouter image model.</p>
+                  <span className="generation-studio-progress" aria-hidden="true" />
                 </div>
-                {latestUserMessage ? (
-                  <div className="generation-latest-prompt">
-                    <span>Prompt</span>
-                    <p>{latestUserMessage.content}</p>
+              ) : previewHasImage ? (
+                <div className="generation-preview-result">
+                  <div className="generation-preview-image generation-studio-preview-image">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={latestAgentMessage?.imageUrl} alt="Generated image" />
                   </div>
-                ) : null}
-                <div className="generation-preview-actions">
-                  <a href={latestAgentMessage.imageUrl} download={latestAgentMessage.imageFileName || "imagent-output.png"}>
-                    <Download size={15} />
-                    Download Image
+                </div>
+              ) : previewFailed ? (
+                <div className="generation-preview-state generation-preview-error">
+                  <AlertCircle size={30} />
+                  <strong>Generation Failed</strong>
+                  <p>{latestAgentMessage?.error}</p>
+                </div>
+              ) : (
+                <div className="generation-preview-state generation-preview-empty">
+                  <div className="generation-preview-orb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/brand/imagent-ai-avatar.jpg" alt="" />
+                  </div>
+                  <strong>Ready For Output</strong>
+                  <p>Your generated image will render in this fixed stage.</p>
+                </div>
+              )}
+            </div>
+
+            {latestUserMessage ? (
+              <div className="generation-latest-prompt generation-studio-latest-prompt">
+                <span>Prompt</span>
+                <p>{latestUserMessage.content}</p>
+              </div>
+            ) : null}
+
+            {resultMetrics.length > 0 ? (
+              <div className="generation-studio-metrics" aria-label="Run metrics">
+                {resultMetrics.map((metric) => {
+                  const Icon = metric.icon;
+                  return (
+                    <div className="generation-studio-metric" key={`${metric.label}-${metric.value}`}>
+                      <span>
+                        <Icon size={14} />
+                        {metric.label}
+                      </span>
+                      <strong>{metric.value}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {previewHasImage ? (
+              <div className="generation-preview-actions">
+                <a href={latestAgentMessage?.imageUrl} download={latestAgentMessage?.imageFileName || "imagent-output.png"}>
+                  <Download size={15} />
+                  Download Image
+                </a>
+                {latestAgentMessage?.traceUrl ? (
+                  <a href={latestAgentMessage.traceUrl} target="_blank" rel="noreferrer">
+                    <FileJson size={15} />
+                    View Trace
                   </a>
-                  {latestAgentMessage.traceUrl ? (
-                    <a href={latestAgentMessage.traceUrl} target="_blank" rel="noreferrer">
-                      <FileJson size={15} />
-                      View Trace
-                    </a>
-                  ) : null}
-                </div>
-                {latestMetaItems.length > 0 ? (
-                  <div className="generation-preview-meta">
-                    {latestMetaItems.map((item) => (
-                      <span key={item}>{item}</span>
-                    ))}
-                  </div>
                 ) : null}
               </div>
-            ) : latestAgentMessage?.error ? (
-              <div className="generation-preview-state generation-preview-error">
-                <AlertCircle size={30} />
-                <strong>Generation Failed</strong>
-                <p>{latestAgentMessage.error}</p>
-              </div>
-            ) : (
-              <div className="generation-preview-state generation-preview-empty">
-                <div className="generation-preview-orb">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/brand/imagent-ai-avatar.jpg" alt="" />
-                </div>
-                <strong>Image Preview</strong>
-                <p>Your generated image and trace will appear here after the agent run.</p>
-              </div>
-            )}
-          </div>
+            ) : null}
+          </EffectCard>
         </div>
       </section>
 
