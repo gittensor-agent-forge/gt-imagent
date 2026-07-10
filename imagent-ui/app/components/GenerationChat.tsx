@@ -8,13 +8,16 @@ import {
   ChevronDown,
   Download,
   FileJson,
+  ImageIcon,
   KeyRound,
   Loader2,
   MessageSquarePlus,
   RadioTower,
   Send,
   Settings,
+  ShieldCheck,
   Sparkles,
+  Wand2,
   X
 } from "lucide-react";
 import { EffectCard, LandingBackgroundFx } from "@/app/components/EffectCard";
@@ -594,7 +597,8 @@ export function GenerationChat() {
             <span>Agent</span>
           </h1>
           <p>
-            Write one prompt and let Imagent call the fixed OpenRouter image model through the current agent runtime.
+            Write one prompt and let Imagent plan it, then call the fixed OpenRouter image model through the current
+            agent runtime.
           </p>
           <div className="generation-status-row" aria-label="Generation status">
             <span className={`generation-status-pill ${runtimeState}`}>
@@ -611,14 +615,28 @@ export function GenerationChat() {
             </span>
           </div>
         </div>
-        <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
-          <Settings size={17} />
-          Settings
-        </button>
+        <div className="generation-hero-side" data-reveal="fade-left" data-reveal-delay="2">
+          <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
+            <Settings size={17} />
+            Settings
+          </button>
+          <div className="generation-hero-spec" aria-label="Console constraints">
+            <EffectCard animated className="generation-spec-card" radius={18}>
+              <ImageIcon size={16} />
+              <span>Fixed Model</span>
+              <strong>{selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}</strong>
+            </EffectCard>
+            <EffectCard animated className="generation-spec-card" radius={18}>
+              <ShieldCheck size={16} />
+              <span>The Variable</span>
+              <strong>Agent Logic</strong>
+            </EffectCard>
+          </div>
+        </div>
       </section>
 
-      <section className="generation-workspace" aria-label="Generation workspace">
-        <div className="generation-panel generation-prompt-panel">
+      <section className="generation-workspace" aria-label="Generation workspace" data-reveal="fade-up" data-reveal-delay="1">
+        <EffectCard className="generation-panel generation-prompt-panel" radius={28}>
           <div className="generation-panel-head">
             <div>
               <span>Prompt</span>
@@ -630,17 +648,6 @@ export function GenerationChat() {
             </button>
           </div>
 
-          <div className="generation-model-card">
-            <div>
-              <span>
-                <Sparkles size={15} />
-                Model
-              </span>
-              <strong>{selectedComposerModel?.name || labelForModel(settings.model, composerModelChoices)}</strong>
-            </div>
-            <small>Fixed through OpenRouter so agent logic is the variable.</small>
-          </div>
-
           <div className="generation-composer-wrap">
             <form className="generation-composer" onSubmit={submit}>
               <textarea
@@ -648,6 +655,7 @@ export function GenerationChat() {
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="Describe the image you want the agent to plan and generate"
                 rows={8}
+                aria-describedby="composer-hint"
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -655,6 +663,10 @@ export function GenerationChat() {
                   }
                 }}
               />
+              <p className="composer-hint" id="composer-hint">
+                <Wand2 size={13} />
+                Press <kbd>Enter</kbd> to generate, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line.
+              </p>
               <div className="composer-toolbar">
                 <div className="generation-composer-controls">
                   {hasConfiguredOpenRouter ? (
@@ -710,14 +722,15 @@ export function GenerationChat() {
             <div className="prompt-suggestions">
               {starterPrompts.map((item) => (
                 <button type="button" key={item} onClick={() => setPrompt(item)}>
-                  {item}
+                  <Sparkles size={13} />
+                  <span>{item}</span>
                 </button>
               ))}
             </div>
           </div>
-        </div>
+        </EffectCard>
 
-        <div className="generation-panel generation-preview-panel">
+        <EffectCard animated className="generation-panel generation-preview-panel" radius={28}>
           <div className="generation-panel-head">
             <div>
               <span>Preview</span>
@@ -784,7 +797,7 @@ export function GenerationChat() {
               </div>
             )}
           </div>
-        </div>
+        </EffectCard>
       </section>
 
       {settingsOpen && isMounted ? createPortal(

@@ -7667,11 +7667,11 @@ body .generation-runs {
 }
 
 body .generation-hero {
-  align-items: start;
+  align-items: end;
   border-bottom: 1px solid var(--generation-line);
   display: grid;
-  gap: 22px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(22px, 4vw, 48px);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   padding-bottom: clamp(22px, 4vw, 34px);
 }
 
@@ -7679,6 +7679,53 @@ body .generation-hero-copy {
   display: grid;
   gap: 16px;
   max-width: 760px;
+}
+
+body .generation-hero-side {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  justify-items: stretch;
+}
+
+body .generation-hero-side .generation-settings-button {
+  justify-self: end;
+}
+
+body .generation-hero-spec {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body .generation-spec-card {
+  --card-bg: rgba(4, 42, 82, 0.72);
+}
+
+body .generation-spec-card .imagent-effect-card__content {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 14px 15px;
+}
+
+body .generation-spec-card svg {
+  color: var(--generation-cyan);
+  margin-bottom: 4px;
+}
+
+body .generation-spec-card span {
+  color: var(--generation-soft);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+body .generation-spec-card strong {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 body .generation-kicker {
@@ -7811,38 +7858,26 @@ body .generation-shell .composer-send-button:disabled {
 }
 
 body .generation-workspace {
+  align-items: start;
   display: grid;
   gap: 22px;
   grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
   margin-top: clamp(26px, 4vw, 42px);
 }
 
-body .generation-panel,
-body .generation-runs {
+/* EffectCard-backed surfaces: the animated BorderGlow supplies the border and
+   fill (matching the Home page card system), so these only tune the fill color
+   and lift shadow. The padded grid lives on the inner content layer. */
+body .generation-shell .generation-panel {
+  --card-bg: rgba(9, 29, 54, 0.9);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3);
+}
+
+body .generation-prompt-panel .imagent-effect-card__content,
+body .generation-preview-panel .imagent-effect-card__content {
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
-    var(--generation-panel);
-  border: 1px solid var(--generation-line);
-  border-radius: 30px;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-  position: relative;
-}
-
-body .generation-panel::before,
-body .generation-runs::before {
-  background: linear-gradient(90deg, transparent, rgba(0, 226, 251, 0.72), rgba(133, 245, 173, 0.48), transparent);
-  content: "";
-  height: 1px;
-  left: 18px;
-  opacity: 0.82;
-  position: absolute;
-  right: 18px;
-  top: 0;
-}
-
-body .generation-prompt-panel,
-body .generation-preview-panel {
+    radial-gradient(120% 100% at 50% 0%, rgba(0, 226, 251, 0.07), transparent 60%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012));
   display: grid;
   gap: 18px;
   padding: clamp(18px, 2vw, 24px);
@@ -7886,41 +7921,6 @@ body .generation-runs-head strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-body .generation-model-card {
-  align-items: center;
-  background: rgba(0, 226, 251, 0.055);
-  border: 1px solid rgba(0, 226, 251, 0.2);
-  border-radius: 22px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr);
-  padding: 16px;
-}
-
-body .generation-model-card span {
-  align-items: center;
-  color: var(--generation-green);
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 950;
-  gap: 7px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-body .generation-model-card strong {
-  color: #ffffff;
-  display: block;
-  font-size: 16px;
-  line-height: 1.25;
-  margin-top: 7px;
-}
-
-body .generation-model-card small {
-  color: var(--generation-muted);
-  line-height: 1.5;
 }
 
 body .generation-composer-wrap {
@@ -7968,6 +7968,31 @@ body .generation-composer textarea {
 
 body .generation-composer textarea::placeholder {
   color: rgba(218, 242, 250, 0.45);
+}
+
+body .generation-composer .composer-hint {
+  align-items: center;
+  color: var(--generation-soft);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  margin: 0;
+  padding: 0 6px;
+}
+
+body .generation-composer .composer-hint svg {
+  color: var(--generation-cyan);
+}
+
+body .generation-composer .composer-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
 }
 
 body .generation-shell .composer-toolbar {
@@ -8053,18 +8078,28 @@ body .generation-shell .prompt-suggestions {
 }
 
 body .generation-shell .prompt-suggestions button {
+  align-items: flex-start;
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
   color: var(--generation-muted);
   cursor: pointer;
+  display: flex;
   font: inherit;
   font-size: 13px;
+  gap: 9px;
   line-height: 1.38;
   min-height: 78px;
   padding: 14px;
   text-align: left;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+body .generation-shell .prompt-suggestions button svg {
+  color: var(--generation-cyan);
+  flex-shrink: 0;
+  margin-top: 2px;
+  opacity: 0.85;
 }
 
 body .generation-shell .prompt-suggestions button:hover {
