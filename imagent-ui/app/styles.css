@@ -10470,6 +10470,7 @@ body .generation-studio-preview-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
 }
 
 body .generation-studio .generation-preview-actions a {
