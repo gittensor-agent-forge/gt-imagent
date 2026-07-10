@@ -940,15 +940,15 @@ export function GenerationChat() {
           </EffectCard>
 
           <EffectCard animated className="generation-studio-panel generation-studio-preview" radius={24} glareOpacity={0.12}>
-            <div className="generation-panel-head generation-studio-preview-head">
-              <div className="generation-panel-head-copy">
-                <span className="generation-panel-kicker">Preview</span>
+            <div className="generation-studio-preview-head">
+              <span className="generation-panel-kicker">Preview</span>
+              <div className="generation-studio-preview-title-row">
                 <strong>Agent Output</strong>
+                <span className={`${previewBadgeClass} generation-preview-status`} role="status" aria-live="polite">
+                  <span className="generation-preview-status-dot" aria-hidden="true" />
+                  {previewBadgeLabel}
+                </span>
               </div>
-              <span className={`${previewBadgeClass} generation-preview-status`} role="status" aria-live="polite">
-                <span className="generation-preview-status-dot" aria-hidden="true" />
-                {previewBadgeLabel}
-              </span>
             </div>
 
             <div className={`generation-preview-surface generation-studio-stage ${isGenerating ? "is-running" : previewFailed ? "is-failed" : previewHasImage ? "is-ready" : "is-empty"}`}>
