@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Check,
   ChevronDown,
+  Download,
+  FileJson,
   KeyRound,
   Loader2,
   MessageCirclePlus,
@@ -21,13 +23,27 @@ import {
 } from "lucide-react";
 import { EffectCard, LandingBackgroundFx } from "@/app/components/EffectCard";
 import { ScrollReveal } from "@/app/components/ScrollReveal";
-import { IMAGENT_GENERATION_MODEL_NAME } from "@/lib/models";
+import { IMAGENT_GENERATION_MODEL_ID, IMAGENT_GENERATION_MODEL_NAME } from "@/lib/models";
 
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  imageUrl?: string;
+  imageFileName?: string;
+  traceUrl?: string;
+  provider?: string;
+  agentId?: string;
+  capability?: string;
+  candidateCount?: number;
+  roundCount?: number;
+  selectedCandidateIndex?: number;
+  model?: string;
+  quality?: string;
+  costUsd?: number;
+  latencyMs?: number;
+  error?: string;
 };
 
 type ChatSession = {
@@ -58,6 +74,30 @@ type VerifyResponse = {
     limit_remaining?: number | null;
   } | null;
   warning?: string;
+  usingServerKey?: boolean;
+  error?: string;
+};
+
+type RuntimeStatusResponse = {
+  ready: boolean;
+  hasServerApiKey: boolean;
+  issues: string[];
+};
+
+type GenerateResponse = {
+  runId?: string;
+  imageUrl?: string;
+  imageFileName?: string;
+  provider?: string;
+  agentId?: string;
+  capability?: string;
+  candidateCount?: number;
+  roundCount?: number;
+  selectedCandidateIndex?: number;
+  traceUrl?: string;
+  model?: string;
+  costUsd?: number;
+  latencyMs?: number;
   error?: string;
 };
 
@@ -72,6 +112,15 @@ const templatePrompts = [
   "Draft a visual direction for a Gittensor miner dashboard.",
   "Design an image prompt for explaining automated PR evaluation."
 ];
+
+const modalFocusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
 
 const emptySession: ChatSession = {
   id: "new-session",
@@ -93,11 +142,29 @@ export function GenerationChat() {
     status: "idle",
     message: "Enter key"
   });
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusResponse | null>(null);
+  const [runtimeError, setRuntimeError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingSessionId, setGeneratingSessionId] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [levelMenuOpen, setLevelMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const modalRef = useRef<HTMLElement | null>(null);
+  const modalTriggerRef = useRef<HTMLElement | null>(null);
+
+  async function loadRuntimeStatus() {
+    try {
+      const response = await fetch("/api/playground/status", { cache: "no-store" });
+      const data = (await response.json()) as RuntimeStatusResponse;
+      setRuntimeStatus(data);
+      setRuntimeError("");
+    } catch (error) {
+      setRuntimeStatus(null);
+      setRuntimeError(error instanceof Error ? error.message : "Failed to check the Imagent runtime.");
+    }
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -114,6 +181,7 @@ export function GenerationChat() {
     setActiveSessionId(activeId);
     setLevel(initialLevel);
     setDraftLevel(initialLevel);
+    void loadRuntimeStatus();
   }, []);
 
   useEffect(() => {
@@ -138,18 +206,64 @@ export function GenerationChat() {
     }
 
     const previousOverflow = document.body.style.overflow;
+    const fallbackTrigger = modalTriggerRef.current;
+    const focusTimer = window.setTimeout(() => {
+      const focusTarget = firstFocusableElement(modalRef.current) || modalRef.current;
+      focusTarget?.focus({ preventScroll: true });
+    }, 0);
     document.body.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        event.preventDefault();
         closeModal();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialog = modalRef.current;
+      if (!dialog) {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(dialog);
+      if (!focusableElements.length) {
+        event.preventDefault();
+        dialog.focus({ preventScroll: true });
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey) {
+        if (!dialog.contains(activeElement) || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus({ preventScroll: true });
+        }
+        return;
+      }
+
+      if (!dialog.contains(activeElement) || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus({ preventScroll: true });
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
+      window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      const trigger = modalTriggerRef.current?.isConnected ? modalTriggerRef.current : fallbackTrigger;
+      if (trigger?.isConnected) {
+        trigger.focus({ preventScroll: true });
+      }
+      modalTriggerRef.current = null;
     };
   }, [modal]);
 
@@ -159,7 +273,12 @@ export function GenerationChat() {
     }
 
     const key = draftApiKey.trim();
-    if (!key) {
+    if (!key && runtimeStatus === null && !runtimeError) {
+      setApiKeyVerification({ status: "verifying", message: "Checking runtime" });
+      return;
+    }
+
+    if (!key && !runtimeStatus?.hasServerApiKey) {
       setApiKeyVerification({ status: "idle", message: "Enter key" });
       return;
     }
@@ -172,7 +291,7 @@ export function GenerationChat() {
         const response = await fetch("/api/openrouter/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: key }),
+          body: JSON.stringify(key ? { apiKey: key } : {}),
           signal: controller.signal
         });
         const data = (await response.json()) as VerifyResponse;
@@ -183,7 +302,7 @@ export function GenerationChat() {
 
         setApiKeyVerification({
           status: "valid",
-          message: data.warning || data.key?.label || "Verified"
+          message: data.warning || (data.usingServerKey ? "Server key" : data.key?.label || "Verified")
         });
       } catch (error) {
         if (controller.signal.aborted) {
@@ -200,7 +319,7 @@ export function GenerationChat() {
       controller.abort();
       window.clearTimeout(verifyTimer);
     };
-  }, [draftApiKey, modal]);
+  }, [draftApiKey, modal, runtimeError, runtimeStatus]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || sessions[0] || emptySession,
@@ -208,7 +327,11 @@ export function GenerationChat() {
   );
   const visibleSessions = sessions.length ? sessions : [emptySession];
   const hasMessages = Boolean(activeSession?.messages.length);
-  const canSend = prompt.trim().length > 0;
+  const hasServerApiKey = Boolean(runtimeStatus?.hasServerApiKey);
+  const hasConfiguredOpenRouter = hasServerApiKey || apiKey.trim().length > 0;
+  const activeIsGenerating = isGenerating && generatingSessionId === activeSession.id;
+  const canSend = prompt.trim().length > 0 && !isGenerating;
+  const canSaveSettings = !draftApiKey.trim() || apiKeyVerification.status === "valid";
   const modalSession = modal && "sessionId" in modal
     ? sessions.find((session) => session.id === modal.sessionId)
     : null;
@@ -223,16 +346,16 @@ export function GenerationChat() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    sendPrompt(prompt);
+    void sendPrompt(prompt);
   }
 
   function selectTemplate(template: string) {
-    sendPrompt(template);
+    void sendPrompt(template);
   }
 
-  function sendPrompt(value: string) {
+  async function sendPrompt(value: string) {
     const content = value.trim();
-    if (!content) {
+    if (!content || isGenerating) {
       return;
     }
 
@@ -244,48 +367,126 @@ export function GenerationChat() {
       content,
       createdAt: now
     };
-    const assistantMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "Agenda received. I will keep this session focused around that direction.",
-      createdAt: now
-    };
 
-    if (!sessions.length) {
-      setSessions([
-        {
-          id: sessionId,
-          title: titleFromPrompt(content),
-          createdAt: now,
-          updatedAt: now,
-          messages: [userMessage, assistantMessage]
-        }
-      ]);
-      setActiveSessionId(sessionId);
-      setPrompt("");
+    if (!hasConfiguredOpenRouter) {
+      openSettings();
       return;
     }
 
-    setSessions((current) =>
-      current.map((session) => {
+    appendSessionMessages(sessionId, [userMessage], titleFromPrompt(content), now);
+    setPrompt("");
+
+    if (runtimeStatus && !runtimeStatus.ready) {
+      appendSessionMessages(sessionId, [
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Imagent runtime is not ready",
+          createdAt: new Date().toISOString(),
+          error: runtimeStatus.issues.join(" ") || runtimeError || "Runtime is not ready.",
+          model: IMAGENT_GENERATION_MODEL_ID,
+          quality: level
+        }
+      ]);
+      void loadRuntimeStatus();
+      return;
+    }
+
+    setIsGenerating(true);
+    setGeneratingSessionId(sessionId);
+
+    try {
+      const response = await fetch("/api/playground/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: content,
+          apiKey: apiKey.trim() || undefined,
+          quality: level
+        })
+      });
+      const data = (await response.json()) as GenerateResponse;
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Generation failed with HTTP ${response.status}`);
+      }
+
+      appendSessionMessages(sessionId, [
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Generated with Imagent",
+          createdAt: new Date().toISOString(),
+          imageUrl: data.imageUrl,
+          imageFileName: data.imageFileName,
+          traceUrl: data.traceUrl,
+          provider: data.provider,
+          agentId: data.agentId,
+          capability: data.capability,
+          candidateCount: data.candidateCount,
+          roundCount: data.roundCount,
+          selectedCandidateIndex: data.selectedCandidateIndex,
+          model: data.model || IMAGENT_GENERATION_MODEL_ID,
+          quality: level,
+          costUsd: data.costUsd,
+          latencyMs: data.latencyMs
+        }
+      ]);
+    } catch (error) {
+      appendSessionMessages(sessionId, [
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Imagent generation failed",
+          createdAt: new Date().toISOString(),
+          error: error instanceof Error ? error.message : "Unknown generation error",
+          model: IMAGENT_GENERATION_MODEL_ID,
+          quality: level
+        }
+      ]);
+      void loadRuntimeStatus();
+    } finally {
+      setIsGenerating(false);
+      setGeneratingSessionId("");
+    }
+  }
+
+  function appendSessionMessages(sessionId: string, appendedMessages: ChatMessage[], nextTitle?: string, createdAt?: string) {
+    setSessions((current) => {
+      const now = new Date().toISOString();
+      if (!current.some((session) => session.id === sessionId)) {
+        return [
+          {
+            id: sessionId,
+            title: nextTitle || "New Session",
+            createdAt: createdAt || now,
+            updatedAt: now,
+            messages: appendedMessages
+          },
+          ...current
+        ];
+      }
+
+      return current.map((session) => {
         if (session.id !== sessionId) {
           return session;
         }
         return {
           ...session,
-          title: session.title === "New Session" ? titleFromPrompt(content) : session.title,
+          title: session.title === "New Session" && nextTitle ? nextTitle : session.title,
           updatedAt: now,
-          messages: [...session.messages, userMessage, assistantMessage]
+          messages: [...session.messages, ...appendedMessages]
         };
-      })
-    );
-    setPrompt("");
+      });
+    });
+    setActiveSessionId(sessionId);
   }
 
   function openSettings() {
+    setModalTrigger();
     setDraftLevel(level);
     setDraftApiKey(apiKey);
     setModal({ type: "settings" });
+    void loadRuntimeStatus();
   }
 
   function updateLevel(value: string) {
@@ -299,12 +500,14 @@ export function GenerationChat() {
 
   function openEditSession(session: ChatSession, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
+    setModalTrigger(event.currentTarget);
     setDraftTitle(session.title);
     setModal({ type: "edit", sessionId: session.id });
   }
 
   function openDeleteSession(session: ChatSession, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
+    setModalTrigger(event.currentTarget);
     setModal({ type: "delete", sessionId: session.id });
   }
 
@@ -315,9 +518,19 @@ export function GenerationChat() {
 
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSaveSettings) {
+      return;
+    }
     setLevel(draftLevel);
     setApiKey(draftApiKey.trim());
     closeModal();
+  }
+
+  function setModalTrigger(fallback?: HTMLElement | null) {
+    const activeElement = document.activeElement;
+    modalTriggerRef.current = activeElement instanceof HTMLElement && activeElement !== document.body
+      ? activeElement
+      : fallback || null;
   }
 
   function saveSessionTitle(event: FormEvent<HTMLFormElement>) {
@@ -509,12 +722,56 @@ export function GenerationChat() {
 
             <div className="generation-chat-history custom-scrollbar">
               {hasMessages ? (
-                activeSession.messages.map((message) => (
-                  <article className={`generation-message ${message.role}`} key={message.id}>
-                    <span>{message.role === "user" ? "You" : "Imagent"}</span>
-                    <p>{message.content}</p>
-                  </article>
-                ))
+                <>
+                  {activeSession.messages.map((message) => {
+                    const metaItems = messageMetaItems(message);
+                    return (
+                      <article
+                        className={`generation-message ${message.role}${message.error ? " error" : ""}${message.imageUrl ? " with-image" : ""}`}
+                        key={message.id}
+                      >
+                        <span>{message.role === "user" ? "You" : "Imagent"}</span>
+                        <p>{message.error || message.content}</p>
+                        {message.imageUrl ? (
+                          <>
+                            <div className="generation-message-image">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={message.imageUrl} alt="Generated image" />
+                            </div>
+                            <div className="generation-message-actions">
+                              <a href={message.imageUrl} download={message.imageFileName || "imagent-output.png"}>
+                                <Download size={15} />
+                                Download Image
+                              </a>
+                              {message.traceUrl ? (
+                                <a href={message.traceUrl} target="_blank" rel="noreferrer">
+                                  <FileJson size={15} />
+                                  View Trace
+                                </a>
+                              ) : null}
+                            </div>
+                          </>
+                        ) : null}
+                        {metaItems.length ? (
+                          <div className="generation-message-meta">
+                            {metaItems.map((item) => (
+                              <span key={item}>{item}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                  {activeIsGenerating ? (
+                    <article className="generation-message assistant generation-message-loading" aria-live="polite">
+                      <span>Imagent</span>
+                      <p>
+                        <Loader2 className="spin" size={15} />
+                        Agent is generating with OpenRouter...
+                      </p>
+                    </article>
+                  ) : null}
+                </>
               ) : (
                 <div className="generation-empty-state">
                   <h1>What&apos;s your agent today?</h1>
@@ -538,7 +795,7 @@ export function GenerationChat() {
                   type="text"
                 />
                 <button type="submit" disabled={!canSend} aria-label="Send agenda">
-                  <Send size={17} />
+                  {isGenerating ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
                 </button>
               </div>
             </form>
@@ -551,7 +808,17 @@ export function GenerationChat() {
             <div className="generation-modal-backdrop" role="presentation" onMouseDown={handleBackdropMouseDown}>
               <EffectCard animated className={`generation-dialog-card${modal.type === "settings" ? " generation-settings-card" : ""}`} glareOpacity={0.16} radius={24}>
                 {modal.type === "settings" ? (
-                  <form className="generation-dialog generation-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="generation-settings-title" onSubmit={saveSettings}>
+                  <form
+                    className="generation-dialog generation-settings-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="generation-settings-title"
+                    onSubmit={saveSettings}
+                    ref={(node) => {
+                      modalRef.current = node;
+                    }}
+                    tabIndex={-1}
+                  >
                     <header>
                       <span className="generation-dialog-icon settings">
                         <Settings size={20} />
@@ -609,7 +876,7 @@ export function GenerationChat() {
                       <button className="generation-secondary-action" type="button" onClick={closeModal}>
                         Cancel
                       </button>
-                      <button className="generation-primary-action" type="submit">
+                      <button className="generation-primary-action" type="submit" disabled={!canSaveSettings}>
                         Save
                       </button>
                     </footer>
@@ -617,7 +884,17 @@ export function GenerationChat() {
                 ) : null}
 
                 {modal.type === "edit" ? (
-                  <form className="generation-dialog" role="dialog" aria-modal="true" aria-labelledby="generation-edit-title" onSubmit={saveSessionTitle}>
+                  <form
+                    className="generation-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="generation-edit-title"
+                    onSubmit={saveSessionTitle}
+                    ref={(node) => {
+                      modalRef.current = node;
+                    }}
+                    tabIndex={-1}
+                  >
                     <header>
                       <span className="generation-dialog-icon">
                         <Pencil size={18} />
@@ -653,7 +930,16 @@ export function GenerationChat() {
                 ) : null}
 
                 {modal.type === "delete" ? (
-                  <section className="generation-dialog danger" role="dialog" aria-modal="true" aria-labelledby="generation-delete-title">
+                  <section
+                    className="generation-dialog danger"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="generation-delete-title"
+                    ref={(node) => {
+                      modalRef.current = node;
+                    }}
+                    tabIndex={-1}
+                  >
                     <header>
                       <span className="generation-dialog-icon danger">
                         <AlertTriangle size={18} />
@@ -709,11 +995,28 @@ function sanitizeSessions(value: ChatSession[]): ChatSession[] {
             .filter((message) => message && typeof message.content === "string")
             .map((message) => {
               const role: ChatMessage["role"] = message.role === "user" ? "user" : "assistant";
+              const imageUrl = typeof message.imageUrl === "string" && !message.imageUrl.startsWith("data:")
+                ? message.imageUrl
+                : undefined;
               return {
                 id: message.id || crypto.randomUUID(),
                 role,
                 content: message.content,
-                createdAt: message.createdAt || session.updatedAt || new Date().toISOString()
+                createdAt: message.createdAt || session.updatedAt || new Date().toISOString(),
+                imageUrl,
+                imageFileName: message.imageFileName,
+                traceUrl: message.traceUrl,
+                provider: message.provider,
+                agentId: message.agentId,
+                capability: message.capability,
+                candidateCount: message.candidateCount,
+                roundCount: message.roundCount,
+                selectedCandidateIndex: message.selectedCandidateIndex,
+                model: message.model,
+                quality: message.quality,
+                costUsd: message.costUsd,
+                latencyMs: message.latencyMs,
+                error: message.error
               };
             })
         : []
@@ -736,4 +1039,48 @@ function titleFromPrompt(value: string) {
 
 function isLevelOption(value: unknown): value is string {
   return typeof value === "string" && levelOptions.includes(value);
+}
+
+function messageMetaItems(message: ChatMessage) {
+  const items: string[] = [];
+  if (message.agentId) {
+    items.push(message.agentId);
+  }
+  if (message.capability) {
+    items.push(message.capability);
+  }
+  if (message.model) {
+    items.push(message.model);
+  }
+  if (message.quality) {
+    items.push(message.quality);
+  }
+  if (typeof message.candidateCount === "number" && message.candidateCount > 0) {
+    items.push(`${message.candidateCount} candidates`);
+  }
+  if (typeof message.roundCount === "number" && message.roundCount > 0) {
+    items.push(`${message.roundCount} rounds`);
+  }
+  if (typeof message.latencyMs === "number") {
+    items.push(`${message.latencyMs.toFixed(0)} ms`);
+  }
+  if (typeof message.costUsd === "number") {
+    items.push(`$${message.costUsd.toFixed(6)}`);
+  }
+  return items;
+}
+
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(container.querySelectorAll<HTMLElement>(modalFocusableSelector)).filter((element) => {
+    const ariaHidden = element.getAttribute("aria-hidden") === "true";
+    return !ariaHidden && (element.offsetWidth > 0 || element.offsetHeight > 0 || element.getClientRects().length > 0);
+  });
+}
+
+function firstFocusableElement(container: HTMLElement | null) {
+  return getFocusableElements(container)[0] || null;
 }
