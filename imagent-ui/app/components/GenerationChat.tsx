@@ -949,6 +949,7 @@ export function GenerationChat() {
             </div>
 
             <div className={`generation-preview-surface generation-studio-stage ${isGenerating ? "is-running" : previewFailed ? "is-failed" : previewHasImage ? "is-ready" : "is-empty"}`}>
+              <div className="generation-studio-stage-inner">
               {isGenerating ? (
                 <div className="generation-preview-state generation-preview-loading">
                   <Loader2 className="spin" size={30} />
@@ -979,8 +980,10 @@ export function GenerationChat() {
                   <p>Your generated image will render in this fixed stage.</p>
                 </div>
               )}
+              </div>
             </div>
 
+            <div className="generation-studio-preview-footer">
             {latestUserMessage ? (
               <div className="generation-latest-prompt generation-studio-latest-prompt">
                 <span>Prompt</span>
@@ -1010,7 +1013,7 @@ export function GenerationChat() {
             ) : null}
 
             {previewHasImage ? (
-              <div className="generation-preview-actions">
+              <div className="generation-preview-actions generation-studio-preview-actions">
                 <a href={latestAgentMessage?.imageUrl} download={latestAgentMessage?.imageFileName || "imagent-output.png"}>
                   <Download size={15} />
                   Download Image
@@ -1023,6 +1026,7 @@ export function GenerationChat() {
                 ) : null}
               </div>
             ) : null}
+            </div>
           </EffectCard>
         </div>
       </section>
