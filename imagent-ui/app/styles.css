@@ -9808,3 +9808,400 @@ body .generation-runs {
     width: 100%;
   }
 }
+
+/* ==========================================================================
+   Generation page redesign
+   Console header, square preview stage, metric tiles, run cards.
+   Everything is scoped under .generation-shell so no other page is affected.
+   ========================================================================== */
+
+/* -- Console header -------------------------------------------------------- */
+
+body .generation-shell .generation-hero {
+  align-items: end;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-bottom: 26px;
+}
+
+body .generation-shell .generation-hero h1 {
+  font-size: clamp(32px, 3.4vw, 46px);
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  margin: 12px 0 10px;
+  max-width: 16ch;
+}
+
+body .generation-shell .generation-hero-copy p {
+  margin: 0;
+  max-width: 54ch;
+}
+
+body .generation-shell .generation-console-rail {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
+body .generation-shell .generation-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* A button does not inherit the pill font, so restate it to match its span siblings. */
+body .generation-shell .generation-status-pill.actionable {
+  cursor: pointer;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+body .generation-shell .generation-status-pill.actionable:hover {
+  background: rgba(255, 176, 87, 0.14);
+  border-color: rgba(255, 176, 87, 0.5);
+  transform: translateY(-1px);
+}
+
+body .generation-shell .generation-status-pill.actionable:focus-visible {
+  outline: 2px solid rgba(0, 226, 251, 0.66);
+  outline-offset: 2px;
+}
+
+/* -- Preview stage --------------------------------------------------------- */
+
+body .generation-shell .generation-preview-surface {
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  padding: 18px;
+}
+
+/* The workspace grid already stretches both panels to the taller one. */
+body .generation-shell .generation-preview-panel {
+  min-height: 0;
+}
+
+/* A fixed square keeps the panel from jumping between empty, running and ready. */
+body .generation-shell .generation-stage {
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(0, 226, 251, 0.09), transparent 52%),
+    rgba(3, 12, 26, 0.62);
+  border-radius: 20px;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  position: relative;
+  width: 100%;
+}
+
+/* Corner ticks, drawn with gradients so no extra markup is needed. */
+body .generation-shell .generation-stage-frame {
+  border-radius: inherit;
+  inset: 10px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+body .generation-shell .generation-stage-frame::before,
+body .generation-shell .generation-stage-frame::after {
+  border: 1px solid rgba(0, 226, 251, 0.34);
+  content: "";
+  height: 18px;
+  position: absolute;
+  width: 18px;
+}
+
+body .generation-shell .generation-stage-frame::before {
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: 6px;
+  left: 0;
+  top: 0;
+}
+
+body .generation-shell .generation-stage-frame::after {
+  border-left: 0;
+  border-top: 0;
+  border-bottom-right-radius: 6px;
+  bottom: 0;
+  right: 0;
+}
+
+body .generation-shell .generation-stage[data-state="ready"] .generation-stage-frame::before,
+body .generation-shell .generation-stage[data-state="ready"] .generation-stage-frame::after {
+  border-color: rgba(0, 226, 251, 0.6);
+}
+
+body .generation-shell .generation-stage[data-state="error"] .generation-stage-frame::before,
+body .generation-shell .generation-stage[data-state="error"] .generation-stage-frame::after {
+  border-color: rgba(255, 120, 130, 0.5);
+}
+
+body .generation-shell .generation-stage-image {
+  height: 100%;
+  width: 100%;
+}
+
+body .generation-shell .generation-stage-image img {
+  animation: generation-stage-in 420ms ease both;
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+@keyframes generation-stage-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+body .generation-shell .generation-stage .generation-preview-state {
+  align-content: center;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+}
+
+/* Indeterminate: the run has no progress signal, so the bar must not imply one. */
+body .generation-shell .generation-stage-progress {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  display: block;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  width: min(240px, 60%);
+}
+
+body .generation-shell .generation-stage-progress > span {
+  animation: generation-indeterminate 1.35s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(0, 226, 251, 0.95), transparent);
+  display: block;
+  height: 100%;
+  width: 42%;
+}
+
+@keyframes generation-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* -- Result metadata ------------------------------------------------------- */
+
+body .generation-shell .generation-preview-result {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+
+body .generation-shell .generation-preview-meta {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+body .generation-shell .generation-meta-tile {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(0, 226, 251, 0.18);
+  border-radius: 14px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+/* Reset the old pill chrome that .generation-preview-meta span used to carry. */
+body .generation-shell .generation-meta-tile span {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: rgba(218, 242, 250, 0.5);
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+body .generation-shell .generation-meta-tile strong {
+  color: #ffffff;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+body .generation-shell .generation-preview-provenance {
+  color: rgba(218, 242, 250, 0.42);
+  font-size: 11.5px;
+  margin: 0;
+  word-break: break-word;
+}
+
+/* -- Recent runs ----------------------------------------------------------- */
+
+/* Fluid instead of a fixed 5-up grid, which truncated every title to two words. */
+body .generation-shell .generation-run-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+body .generation-shell .generation-run-shell {
+  display: flex;
+  min-width: 0;
+}
+
+body .generation-shell .generation-run-card {
+  border-radius: 18px;
+  transition: transform 200ms ease;
+  width: 100%;
+}
+
+body .generation-shell .generation-run-card:hover {
+  transform: translateY(-3px);
+}
+
+body .generation-shell .generation-run-card .imagent-effect-card__content {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 12px 12px 14px;
+}
+
+body .generation-shell .generation-run-select {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--generation-muted);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+body .generation-shell .generation-run-mark {
+  align-items: center;
+  background: rgba(0, 226, 251, 0.09);
+  border: 1px solid rgba(0, 226, 251, 0.2);
+  border-radius: 9px;
+  color: rgba(0, 226, 251, 0.9);
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+body .generation-shell .generation-run-card.active .generation-run-mark {
+  background: rgba(0, 226, 251, 0.22);
+  border-color: rgba(0, 226, 251, 0.55);
+  color: #ffffff;
+}
+
+body .generation-shell .generation-run-card.active .border-glow-inner {
+  border-color: rgba(0, 226, 251, 0.46);
+}
+
+body .generation-shell .generation-run-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body .generation-shell .generation-run-copy strong {
+  color: #ffffff;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body .generation-shell .generation-run-copy span {
+  color: rgba(218, 242, 250, 0.46);
+  font-size: 11.5px;
+}
+
+body .generation-shell .generation-run-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: rgba(218, 242, 250, 0.4);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 6px;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+body .generation-shell .generation-run-delete:hover {
+  background: rgba(255, 120, 130, 0.12);
+  border-color: rgba(255, 120, 130, 0.4);
+  color: #ff9aa4;
+}
+
+body .generation-shell .generation-runs-empty {
+  align-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: var(--generation-muted);
+  display: flex;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+body .generation-shell .generation-runs-empty p {
+  margin: 0;
+}
+
+/* -- Responsive ------------------------------------------------------------ */
+
+@media (max-width: 980px) {
+  body .generation-shell .generation-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .generation-shell .generation-console-rail,
+  body .generation-shell .generation-status-row {
+    justify-content: flex-start;
+    justify-items: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body .generation-shell .generation-stage-progress > span,
+  body .generation-shell .generation-stage-image img {
+    animation: none;
+  }
+
+  body .generation-shell .generation-run-card:hover,
+  body .generation-shell .starter-card:hover,
+  body .generation-shell .generation-status-pill.actionable:hover {
+    transform: none;
+  }
+}

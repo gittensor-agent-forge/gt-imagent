@@ -12,6 +12,7 @@ import {
   Download,
   Eraser,
   FileJson,
+  ImageIcon,
   KeyRound,
   LayoutDashboard,
   Loader2,
@@ -468,31 +469,43 @@ export function GenerationChat() {
   const latestUserMessage = [...activeMessages].reverse().find((message) => message.role === "user");
   const recentSessions = sessions.filter((session) => session.messages.length > 0).slice(0, 5);
   const runtimeState = !runtimeStatus && !runtimeError ? "checking" : runtimeReady ? "ready" : "blocked";
-  const latestMetaItems: string[] = [];
+  const stageState = isGenerating
+    ? "running"
+    : latestAgentMessage?.imageUrl
+      ? "ready"
+      : latestAgentMessage?.error
+        ? "error"
+        : "empty";
+  // Labelled tiles instead of an unlabelled chip row: a bare "auto" or a bare model id
+  // told the user nothing, and two identical values collided as React keys.
+  const latestMetaTiles: Array<{ label: string; value: string }> = [];
 
-  if (latestAgentMessage?.agentId) {
-    latestMetaItems.push(latestAgentMessage.agentId);
+  if (latestAgentMessage?.latencyMs !== undefined) {
+    latestMetaTiles.push({ label: "Latency", value: `${latestAgentMessage.latencyMs.toFixed(0)} ms` });
   }
-  if (latestAgentMessage?.capability) {
-    latestMetaItems.push(latestAgentMessage.capability);
-  }
-  if (latestAgentMessage) {
-    latestMetaItems.push(latestAgentMessage.model || settings.model);
+  if (latestAgentMessage?.costUsd !== undefined) {
+    latestMetaTiles.push({ label: "Cost", value: `$${latestAgentMessage.costUsd.toFixed(6)}` });
   }
   if (latestAgentMessage?.quality) {
-    latestMetaItems.push(latestAgentMessage.quality);
+    latestMetaTiles.push({ label: "Quality", value: latestAgentMessage.quality });
   }
   if (typeof latestAgentMessage?.candidateCount === "number" && latestAgentMessage.candidateCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.candidateCount} candidates`);
+    latestMetaTiles.push({ label: "Candidates", value: String(latestAgentMessage.candidateCount) });
   }
   if (typeof latestAgentMessage?.roundCount === "number" && latestAgentMessage.roundCount > 0) {
-    latestMetaItems.push(`${latestAgentMessage.roundCount} rounds`);
+    latestMetaTiles.push({ label: "Rounds", value: String(latestAgentMessage.roundCount) });
   }
-  if (typeof latestAgentMessage?.latencyMs === "number") {
-    latestMetaItems.push(`${latestAgentMessage.latencyMs.toFixed(0)} ms`);
+
+  const latestMetaFooter: string[] = [];
+
+  if (latestAgentMessage?.agentId) {
+    latestMetaFooter.push(latestAgentMessage.agentId);
   }
-  if (typeof latestAgentMessage?.costUsd === "number") {
-    latestMetaItems.push(`$${latestAgentMessage.costUsd.toFixed(6)}`);
+  if (latestAgentMessage?.capability) {
+    latestMetaFooter.push(latestAgentMessage.capability);
+  }
+  if (latestAgentMessage) {
+    latestMetaFooter.push(latestAgentMessage.model || settings.model);
   }
 
   function createSession() {
@@ -661,33 +674,40 @@ export function GenerationChat() {
             <Sparkles size={14} />
             Image Agent Console
           </span>
-          <h1 id="generation-title" aria-label="Generate With The Current Agent">
-            <span>Generate With</span>
-            <span>The Current</span>
-            <span>Agent</span>
-          </h1>
+          <h1 id="generation-title">Generate With The Current Agent</h1>
           <p>
             Write one prompt and let Imagent call the fixed OpenRouter image model through the current agent runtime.
           </p>
+        </div>
+
+        <div className="generation-console-rail">
           <div className="generation-status-row" aria-label="Generation status">
             <span className={`generation-status-pill ${runtimeState}`}>
               <span className="generation-status-dot" />
               {runtimeState === "checking" ? "Checking Runtime" : runtimeReady ? "Runtime Ready" : "Runtime Blocked"}
             </span>
-            <span className={`generation-status-pill ${hasConfiguredOpenRouter ? "ready" : "warning"}`}>
-              <KeyRound size={14} />
-              {hasConfiguredOpenRouter ? "OpenRouter Ready" : "OpenRouter Needed"}
-            </span>
+            {hasConfiguredOpenRouter ? (
+              <span className="generation-status-pill ready">
+                <KeyRound size={14} />
+                OpenRouter Ready
+              </span>
+            ) : (
+              // The one status that the user can act on, so it is the one that is a button.
+              <button className="generation-status-pill warning actionable" type="button" onClick={openSettings}>
+                <KeyRound size={14} />
+                OpenRouter Needed
+              </button>
+            )}
             <span className="generation-status-pill">
               <RadioTower size={14} />
               Gittensor Powered
             </span>
           </div>
+          <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
+            <Settings size={17} />
+            Settings
+          </button>
         </div>
-        <button className="generation-settings-button" type="button" onClick={openSettings} ref={settingsButtonRef}>
-          <Settings size={17} />
-          Settings
-        </button>
       </section>
 
       <section className="generation-workspace" aria-label="Generation workspace">
@@ -848,22 +868,57 @@ export function GenerationChat() {
           </div>
 
           <div className="generation-preview-surface">
-            {isGenerating ? (
-              <div className="generation-preview-state generation-preview-loading">
-                <Loader2 className="spin" size={30} />
-                <strong>Agent Is Generating</strong>
-                <p>Planning the prompt and calling the OpenRouter image model.</p>
-              </div>
-            ) : latestAgentMessage?.imageUrl ? (
-              <div className="generation-preview-result">
-                <div className="generation-preview-image">
+            {/* One square stage that never changes size, so the panel does not jump between states. */}
+            <div className="generation-stage" data-state={stageState}>
+              <span className="generation-stage-frame" aria-hidden="true" />
+              {isGenerating ? (
+                <div className="generation-preview-state generation-preview-loading">
+                  <Loader2 className="spin" size={30} />
+                  <strong>Agent Is Generating</strong>
+                  <p>Planning the prompt and calling the OpenRouter image model.</p>
+                  <span className="generation-stage-progress" role="progressbar" aria-label="Generating image">
+                    <span />
+                  </span>
+                </div>
+              ) : latestAgentMessage?.imageUrl ? (
+                <div className="generation-stage-image">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={latestAgentMessage.imageUrl} alt="Generated image" />
                 </div>
+              ) : latestAgentMessage?.error ? (
+                <div className="generation-preview-state generation-preview-error">
+                  <AlertCircle size={30} />
+                  <strong>Generation Failed</strong>
+                  <p>{latestAgentMessage.error}</p>
+                </div>
+              ) : (
+                <div className="generation-preview-state generation-preview-empty">
+                  <div className="generation-preview-orb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/brand/imagent-ai-avatar.jpg" alt="" />
+                  </div>
+                  <strong>Image Preview</strong>
+                  <p>Your generated image and trace will appear here after the agent run.</p>
+                </div>
+              )}
+            </div>
+
+            {latestAgentMessage?.imageUrl ? (
+              <div className="generation-preview-result">
                 {latestUserMessage ? (
                   <div className="generation-latest-prompt">
                     <span>Prompt</span>
                     <p>{latestUserMessage.content}</p>
+                  </div>
+                ) : null}
+                {latestMetaTiles.length > 0 ? (
+                  <div className="generation-preview-meta">
+                    {latestMetaTiles.map((tile) => (
+                      <div className="generation-meta-tile" key={tile.label}>
+                        <span>{tile.label}</span>
+                        <strong>{tile.value}</strong>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
                 <div className="generation-preview-actions">
@@ -878,30 +933,11 @@ export function GenerationChat() {
                     </a>
                   ) : null}
                 </div>
-                {latestMetaItems.length > 0 ? (
-                  <div className="generation-preview-meta">
-                    {latestMetaItems.map((item) => (
-                      <span key={item}>{item}</span>
-                    ))}
-                  </div>
+                {latestMetaFooter.length > 0 ? (
+                  <p className="generation-preview-provenance">{latestMetaFooter.join(" · ")}</p>
                 ) : null}
               </div>
-            ) : latestAgentMessage?.error ? (
-              <div className="generation-preview-state generation-preview-error">
-                <AlertCircle size={30} />
-                <strong>Generation Failed</strong>
-                <p>{latestAgentMessage.error}</p>
-              </div>
-            ) : (
-              <div className="generation-preview-state generation-preview-empty">
-                <div className="generation-preview-orb">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/brand/imagent-ai-avatar.jpg" alt="" />
-                </div>
-                <strong>Image Preview</strong>
-                <p>Your generated image and trace will appear here after the agent run.</p>
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       </section>
@@ -916,25 +952,50 @@ export function GenerationChat() {
         </div>
         {recentSessions.length > 0 ? (
           <div className="generation-run-list">
-            {recentSessions.map((session) => (
-              <div className={session.id === activeSessionId ? "generation-run-card active" : "generation-run-card"} key={session.id}>
-                <button className="generation-run-select" type="button" onClick={() => setActiveSessionId(session.id)}>
-                  <strong>{session.title}</strong>
-                  <span>{session.messages.length} messages</span>
-                </button>
-                <button
-                  className="generation-run-delete"
-                  type="button"
-                  aria-label={`Delete ${session.title}`}
-                  onClick={() => deleteSession(session.id)}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
+            {recentSessions.map((session) => {
+              const active = session.id === activeSessionId;
+              const images = session.messages.filter((message) => Boolean(message.imageUrl)).length;
+              // No data-reveal here: ScrollReveal only observes elements that exist at
+              // mount, and run cards are created after a generation.
+              return (
+                <div className="generation-run-shell" key={session.id}>
+                  <EffectCard className={active ? "generation-run-card active" : "generation-run-card"} glareOpacity={0.1} radius={18}>
+                    <button
+                      className="generation-run-select"
+                      type="button"
+                      aria-current={active}
+                      onClick={() => setActiveSessionId(session.id)}
+                    >
+                      <span className="generation-run-mark" aria-hidden="true">
+                        {active ? <RadioTower size={14} /> : <ImageIcon size={14} />}
+                      </span>
+                      <span className="generation-run-copy">
+                        <strong>{session.title}</strong>
+                        <span>
+                          {images > 0 ? `${images} image${images === 1 ? "" : "s"}` : "No image yet"}
+                          {" · "}
+                          {formatRelativeTime(session.updatedAt)}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      className="generation-run-delete"
+                      type="button"
+                      aria-label={`Delete ${session.title}`}
+                      onClick={() => deleteSession(session.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </EffectCard>
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <p className="generation-runs-empty">No saved runs yet.</p>
+          <div className="generation-runs-empty">
+            <ImageIcon size={18} />
+            <p>No saved runs yet. Your generations are stored in this browser only.</p>
+          </div>
         )}
       </section>
 
@@ -1259,6 +1320,26 @@ function newSession(): ChatSession {
     updatedAt: now,
     messages: []
   };
+}
+
+function formatRelativeTime(value: string) {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) {
+    return "just now";
+  }
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) {
+    return "just now";
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 function titleFromPrompt(prompt: string) {
