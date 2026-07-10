@@ -787,8 +787,8 @@ export function GenerationChat() {
         <div className="generation-studio-main">
           <EffectCard animated className="generation-studio-panel generation-studio-composer" radius={24} glareOpacity={0.12}>
             <div className="generation-panel-head">
-              <div>
-                <span>Prompt</span>
+              <div className="generation-panel-head-copy">
+                <span className="generation-panel-kicker">Prompt</span>
                 {titleEditing ? (
                   <input
                     ref={titleInputRef}
@@ -940,12 +940,15 @@ export function GenerationChat() {
           </EffectCard>
 
           <EffectCard animated className="generation-studio-panel generation-studio-preview" radius={24} glareOpacity={0.12}>
-            <div className="generation-panel-head">
-              <div>
-                <span>Preview</span>
+            <div className="generation-panel-head generation-studio-preview-head">
+              <div className="generation-panel-head-copy">
+                <span className="generation-panel-kicker">Preview</span>
                 <strong>Agent Output</strong>
               </div>
-              <span className={previewBadgeClass}>{previewBadgeLabel}</span>
+              <span className={`${previewBadgeClass} generation-preview-status`} role="status" aria-live="polite">
+                <span className="generation-preview-status-dot" aria-hidden="true" />
+                {previewBadgeLabel}
+              </span>
             </div>
 
             <div className={`generation-preview-surface generation-studio-stage ${isGenerating ? "is-running" : previewFailed ? "is-failed" : previewHasImage ? "is-ready" : "is-empty"}`}>

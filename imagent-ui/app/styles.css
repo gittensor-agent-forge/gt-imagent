@@ -7863,7 +7863,7 @@ body .generation-suggestions-head {
   min-width: 0;
 }
 
-body .generation-panel-head span,
+body .generation-panel-kicker,
 body .generation-runs-head span,
 body .generation-suggestions-head span,
 body .generation-latest-prompt span {
@@ -8431,6 +8431,11 @@ html.imagent-reveal-ready body .generation-shell [data-reveal-visible="true"] {
   body .generation-runs-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  body .generation-studio-preview-head {
+    align-items: center;
+    flex-direction: row;
   }
 
   body .generation-prompt-panel,
@@ -9226,7 +9231,7 @@ body .generation-hero-copy {
 body .generation-kicker,
 body .generation-status-pill,
 body .generation-preview-badge,
-body .generation-panel-head span,
+body .generation-panel-kicker,
 body .generation-runs-head span,
 body .generation-suggestions-head span,
 body .generation-latest-prompt span,
@@ -9593,6 +9598,11 @@ body .generation-runs {
   body .generation-runs-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  body .generation-studio-preview-head {
+    align-items: center;
+    flex-direction: row;
   }
 
   body .generation-shell .generation-new-run {
@@ -10131,32 +10141,102 @@ body .generation-studio-progress::after {
   }
 }
 
-body .generation-preview-badge.failed {
-  border-color: rgba(255, 101, 118, 0.4);
-  color: #ff9ea9;
-}
-
-body .generation-preview-badge.ready {
-  border-color: rgba(0, 226, 251, 0.34);
-  color: #ffffff;
-}
-
 body .generation-studio .generation-preview-badge {
+  align-items: center;
+  align-self: center;
   border-radius: 12px;
+  display: inline-flex;
+  flex-shrink: 0;
   font-size: 11px;
+  gap: 8px;
   letter-spacing: 0.08em;
-  min-height: 30px;
-  padding: 0 10px;
+  line-height: 1;
+  margin-top: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-body .generation-studio-preview .generation-panel-head {
+body .generation-studio-preview-head {
   align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
   margin-bottom: 2px;
+  padding-bottom: 12px;
 }
 
 body .generation-studio-preview-footer {
   display: grid;
   gap: 12px;
+}
+
+body .generation-panel-head-copy {
+  min-width: 0;
+}
+
+body .generation-preview-status-dot {
+  border-radius: 999px;
+  flex-shrink: 0;
+  height: 7px;
+  width: 7px;
+}
+
+body .generation-studio .generation-preview-badge.running {
+  background: rgba(133, 245, 173, 0.1);
+  border-color: rgba(133, 245, 173, 0.38);
+  color: #b8ffd0;
+}
+
+body .generation-studio .generation-preview-badge.running .generation-preview-status-dot {
+  animation: generation-status-pulse 1.4s ease-in-out infinite;
+  background: var(--generation-green);
+  box-shadow: 0 0 10px rgba(133, 245, 173, 0.85);
+}
+
+body .generation-studio .generation-preview-badge.ready {
+  background: rgba(0, 226, 251, 0.1);
+  border-color: rgba(0, 226, 251, 0.34);
+  color: #dffcff;
+}
+
+body .generation-studio .generation-preview-badge.ready .generation-preview-status-dot {
+  background: var(--generation-cyan);
+  box-shadow: 0 0 10px rgba(0, 226, 251, 0.75);
+}
+
+body .generation-studio .generation-preview-badge.failed {
+  background: rgba(255, 101, 118, 0.1);
+  border-color: rgba(255, 101, 118, 0.38);
+  color: #ffc4cb;
+}
+
+body .generation-studio .generation-preview-badge.failed .generation-preview-status-dot {
+  background: #ff6576;
+  box-shadow: 0 0 10px rgba(255, 101, 118, 0.7);
+}
+
+body .generation-studio .generation-preview-badge:not(.running):not(.ready):not(.failed) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--generation-muted);
+}
+
+body .generation-studio .generation-preview-badge:not(.running):not(.ready):not(.failed) .generation-preview-status-dot {
+  background: rgba(218, 242, 250, 0.45);
+}
+
+@keyframes generation-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
 }
 
 body .generation-studio-latest-prompt {
@@ -10316,6 +10396,15 @@ body .generation-studio .generation-composer .composer-clear-button {
 
   body .generation-studio-metrics {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .generation-studio-preview-head {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  body .generation-studio .generation-preview-badge {
+    margin-left: auto;
   }
 
   body .generation-studio .generation-composer .composer-keyboard-hint {
