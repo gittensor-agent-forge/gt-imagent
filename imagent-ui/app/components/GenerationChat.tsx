@@ -991,12 +991,15 @@ export function GenerationChat() {
             <div className="generation-studio-preview-footer">
             {latestUserMessage ? (
               <div className="generation-latest-prompt generation-studio-latest-prompt">
-                <span>Prompt</span>
+                <span className="generation-panel-kicker">Prompt</span>
                 <p>{latestUserMessage.content}</p>
+                {provenanceParts.length > 0 ? (
+                  <p className="generation-studio-provenance generation-studio-provenance-inline">
+                    {provenanceParts.join(" · ")}
+                  </p>
+                ) : null}
               </div>
-            ) : null}
-
-            {provenanceParts.length > 0 ? (
+            ) : provenanceParts.length > 0 ? (
               <p className="generation-studio-provenance">{provenanceParts.join(" · ")}</p>
             ) : null}
 
