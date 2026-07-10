@@ -9797,9 +9797,10 @@ body .generation-studio .generation-panel-kicker,
 body .generation-studio .generation-suggestions-head .generation-panel-kicker {
   color: var(--generation-cyan);
   display: block;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  margin-inline-start: 2px;
   overflow: visible;
-  padding-inline: 4px 2px;
+  padding-inline: 10px 4px;
   text-indent: 0;
   width: fit-content;
 }
@@ -9841,6 +9842,10 @@ body .generation-studio-starter-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body .generation-studio-starter-grid > .generation-studio-starter-card {
+  min-width: 0;
 }
 
 body .generation-studio-starter-card button {
@@ -10258,6 +10263,7 @@ body .generation-studio-preview-head {
   display: grid;
   gap: 6px;
   margin-bottom: 2px;
+  overflow: visible;
   padding-bottom: 12px;
 }
 
@@ -10381,7 +10387,10 @@ body .generation-studio-latest-prompt .generation-panel-kicker {
   color: var(--generation-soft);
   font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.04em;
   margin: 0;
+  margin-inline-start: 2px;
+  padding-inline: 10px 4px;
   text-transform: uppercase;
 }
 
@@ -10542,13 +10551,34 @@ body .generation-studio .generation-composer .composer-clear-button {
 
   body .generation-studio-starter-grid {
     display: grid;
-    gap: 12px;
+    gap: 10px;
     grid-auto-columns: unset;
     grid-auto-flow: row;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow: visible;
     padding-bottom: 0;
     scroll-snap-type: none;
+  }
+
+  body .generation-studio-starter-grid > .generation-studio-starter-card:nth-child(n + 3) {
+    display: none;
+  }
+
+  body .generation-studio-starter-card button {
+    padding: 12px;
+  }
+
+  body .generation-studio-starter-card p {
+    display: none;
+  }
+
+  body .generation-studio .generation-panel-kicker,
+  body .generation-studio .generation-suggestions-head .generation-panel-kicker,
+  body .generation-studio-latest-prompt .generation-panel-kicker,
+  body .generation-studio-preview-head .generation-panel-kicker {
+    letter-spacing: 0.03em;
+    margin-inline-start: 6px;
+    padding-inline-start: 12px;
   }
 
   body .generation-studio .generation-composer textarea {
