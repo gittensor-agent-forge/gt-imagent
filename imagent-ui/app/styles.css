@@ -9822,32 +9822,6 @@ body .generation-studio-run-empty {
   margin: 0;
 }
 
-body .generation-studio-run-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  color: #ffffff;
-  cursor: pointer;
-  display: grid;
-  font: inherit;
-  gap: 4px;
-  padding: 12px;
-  text-align: left;
-  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
-}
-
-body .generation-studio-run-card small {
-  color: var(--generation-muted);
-  font-size: 11px;
-}
-
-body .generation-studio-run-card.is-active,
-body .generation-studio-run-card:hover {
-  background: rgba(0, 226, 251, 0.08);
-  border-color: rgba(0, 226, 251, 0.34);
-  transform: translateY(-1px);
-}
-
 body .generation-studio-main {
   display: grid;
   gap: 18px;
@@ -10159,6 +10133,155 @@ body .generation-studio .generation-composer .composer-clear-button {
   }
 
   body .generation-studio-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+body .generation-studio-bench-strip {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 16px auto 0;
+  max-width: 1320px;
+  width: 100%;
+}
+
+body .generation-studio-bench-card .imagent-effect-card__content {
+  align-items: center;
+  display: grid;
+  gap: 4px 10px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  padding: 12px 14px;
+}
+
+body .generation-studio-bench-card span {
+  color: var(--generation-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+body .generation-studio-bench-card strong {
+  color: #ffffff;
+  font-size: 14px;
+  grid-column: 2 / -1;
+}
+
+body .generation-studio-run-row {
+  align-items: stretch;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+body .generation-studio-run-row.is-active .generation-studio-run-card {
+  border-color: rgba(0, 226, 251, 0.42);
+}
+
+body .generation-studio-run-card {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  color: #ffffff;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px 12px;
+  text-align: left;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+body .generation-studio-run-card:hover {
+  background: rgba(0, 226, 251, 0.08);
+  border-color: rgba(0, 226, 251, 0.34);
+  transform: translateY(-1px);
+}
+
+body .generation-studio-run-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body .generation-studio-run-copy strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body .generation-studio-run-copy small {
+  color: var(--generation-muted);
+  font-size: 11px;
+}
+
+body .generation-run-status {
+  border-radius: 999px;
+  height: 8px;
+  margin-top: 4px;
+  width: 8px;
+}
+
+body .generation-run-status.ready {
+  background: var(--generation-green);
+  box-shadow: 0 0 12px rgba(133, 245, 173, 0.7);
+}
+
+body .generation-run-status.failed {
+  background: #ff6576;
+  box-shadow: 0 0 12px rgba(255, 101, 118, 0.65);
+}
+
+body .generation-run-status.waiting {
+  background: rgba(218, 242, 250, 0.35);
+}
+
+body .generation-run-delete {
+  align-items: center;
+  align-self: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: rgba(255, 224, 228, 0.82);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+  width: 34px;
+}
+
+body .generation-run-delete:hover {
+  background: rgba(255, 101, 118, 0.12);
+  border-color: rgba(255, 101, 118, 0.34);
+  color: #ffc4cb;
+}
+
+body .generation-studio-starter-card:hover {
+  transform: translateY(-4px);
+}
+
+body .generation-studio-preview-image img {
+  animation: generation-studio-image-in 420ms ease;
+}
+
+@keyframes generation-studio-image-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 900px) {
+  body .generation-studio-bench-strip {
     grid-template-columns: minmax(0, 1fr);
   }
 }
