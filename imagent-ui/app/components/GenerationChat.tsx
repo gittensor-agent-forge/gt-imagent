@@ -21,7 +21,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { EffectCard, LandingBackgroundFx } from "@/app/components/EffectCard";
+import { LandingBackgroundFx } from "@/app/components/EffectCard";
 import { ScrollReveal } from "@/app/components/ScrollReveal";
 import { IMAGENT_GENERATION_MODEL_ID, IMAGENT_GENERATION_MODEL_NAME } from "@/lib/models";
 
@@ -58,6 +58,7 @@ type ModalState =
   | { type: "settings" }
   | { type: "edit"; sessionId: string }
   | { type: "delete"; sessionId: string }
+  | { type: "delete-all"; returnToSettings?: boolean }
   | null;
 
 type ApiKeyVerificationStatus = "idle" | "verifying" | "valid" | "invalid";
@@ -135,7 +136,6 @@ export function GenerationChat() {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [level, setLevel] = useState("auto");
-  const [draftLevel, setDraftLevel] = useState("auto");
   const [apiKey, setApiKey] = useState("");
   const [draftApiKey, setDraftApiKey] = useState("");
   const [apiKeyVerification, setApiKeyVerification] = useState<ApiKeyVerification>({
@@ -153,6 +153,8 @@ export function GenerationChat() {
   const [mounted, setMounted] = useState(false);
   const modalRef = useRef<HTMLElement | null>(null);
   const modalTriggerRef = useRef<HTMLElement | null>(null);
+  const closeModalRef = useRef<() => void>(() => {});
+  const preserveModalTriggerRef = useRef(false);
 
   async function loadRuntimeStatus() {
     try {
@@ -180,7 +182,6 @@ export function GenerationChat() {
     setSessions(initialSessions);
     setActiveSessionId(activeId);
     setLevel(initialLevel);
-    setDraftLevel(initialLevel);
     void loadRuntimeStatus();
   }, []);
 
@@ -201,6 +202,10 @@ export function GenerationChat() {
   }, [level]);
 
   useEffect(() => {
+    closeModalRef.current = closeModal;
+  });
+
+  useEffect(() => {
     if (!modal) {
       return;
     }
@@ -216,7 +221,7 @@ export function GenerationChat() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeModal();
+        closeModalRef.current();
         return;
       }
 
@@ -259,6 +264,11 @@ export function GenerationChat() {
       window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      if (preserveModalTriggerRef.current) {
+        preserveModalTriggerRef.current = false;
+        return;
+      }
+
       const trigger = modalTriggerRef.current?.isConnected ? modalTriggerRef.current : fallbackTrigger;
       if (trigger?.isConnected) {
         trigger.focus({ preventScroll: true });
@@ -332,11 +342,20 @@ export function GenerationChat() {
   const activeIsGenerating = isGenerating && generatingSessionId === activeSession.id;
   const canSend = prompt.trim().length > 0 && !isGenerating;
   const canSaveSettings = !draftApiKey.trim() || apiKeyVerification.status === "valid";
+  const canDeleteAllSessions = sessions.length > 1 || sessions.some((session) => session.messages.length > 0);
   const modalSession = modal && "sessionId" in modal
     ? sessions.find((session) => session.id === modal.sessionId)
     : null;
 
   function createSession() {
+    const reusableSession = sessions.find((session) => session.messages.length === 0);
+    if (reusableSession) {
+      setActiveSessionId(reusableSession.id);
+      setPrompt("");
+      setSidebarCollapsed(false);
+      return;
+    }
+
     const session = newSession();
     setSessions((current) => [session, ...current]);
     setActiveSessionId(session.id);
@@ -483,7 +502,7 @@ export function GenerationChat() {
 
   function openSettings() {
     setModalTrigger();
-    setDraftLevel(level);
+    setLevelMenuOpen(false);
     setDraftApiKey(apiKey);
     setModal({ type: "settings" });
     void loadRuntimeStatus();
@@ -494,13 +513,13 @@ export function GenerationChat() {
       return;
     }
     setLevel(value);
-    setDraftLevel(value);
     setLevelMenuOpen(false);
   }
 
   function openEditSession(session: ChatSession, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     setModalTrigger(event.currentTarget);
+    setLevelMenuOpen(false);
     setDraftTitle(session.title);
     setModal({ type: "edit", sessionId: session.id });
   }
@@ -508,10 +527,27 @@ export function GenerationChat() {
   function openDeleteSession(session: ChatSession, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     setModalTrigger(event.currentTarget);
+    setLevelMenuOpen(false);
     setModal({ type: "delete", sessionId: session.id });
   }
 
+  function openDeleteAllSessions() {
+    if (!canDeleteAllSessions) {
+      return;
+    }
+
+    preserveModalTriggerRef.current = true;
+    setModal({ type: "delete-all", returnToSettings: true });
+  }
+
   function closeModal() {
+    if (modal?.type === "delete-all" && modal.returnToSettings) {
+      preserveModalTriggerRef.current = true;
+      setModal({ type: "settings" });
+      void loadRuntimeStatus();
+      return;
+    }
+
     setModal(null);
     setDraftTitle("");
   }
@@ -521,7 +557,6 @@ export function GenerationChat() {
     if (!canSaveSettings) {
       return;
     }
-    setLevel(draftLevel);
     setApiKey(draftApiKey.trim());
     closeModal();
   }
@@ -568,6 +603,22 @@ export function GenerationChat() {
     if (!remainingSessions.some((session) => session.id === activeSessionId)) {
       setActiveSessionId(remainingSessions[0].id);
     }
+    closeModal();
+  }
+
+  function deleteAllSessions() {
+    const shouldReturnToSettings = modal?.type === "delete-all" && modal.returnToSettings;
+    const replacement = newSession();
+    setSessions([replacement]);
+    setActiveSessionId(replacement.id);
+    setPrompt("");
+    if (shouldReturnToSettings) {
+      preserveModalTriggerRef.current = true;
+      setModal({ type: "settings" });
+      void loadRuntimeStatus();
+      return;
+    }
+
     closeModal();
   }
 
@@ -662,6 +713,19 @@ export function GenerationChat() {
                 })}
               </div>
             )}
+
+            <div className="generation-session-footer">
+              <button
+                className="generation-sidebar-settings"
+                type="button"
+                aria-label="Open generation settings"
+                title="Settings"
+                onClick={openSettings}
+              >
+                <Settings size={17} />
+                {sidebarCollapsed ? null : <span>Settings</span>}
+              </button>
+            </div>
           </aside>
 
           <section className="generation-chat-panel" aria-label="Chat">
@@ -671,53 +735,44 @@ export function GenerationChat() {
                   <Sparkles size={15} />
                   <strong>{IMAGENT_GENERATION_MODEL_NAME}</strong>
                 </span>
-                <div
-                  className={levelMenuOpen ? "generation-level-menu open" : "generation-level-menu"}
-                  onBlur={(event) => {
-                    const nextFocus = event.relatedTarget as Node | null;
-                    if (!event.currentTarget.contains(nextFocus)) {
-                      setLevelMenuOpen(false);
-                    }
-                  }}
-                >
-                  <button
-                    className="generation-level-trigger"
-                    type="button"
-                    aria-haspopup="listbox"
-                    aria-expanded={levelMenuOpen}
-                    onClick={() => setLevelMenuOpen((current) => !current)}
-                  >
-                    <span>{level}</span>
-                    <ChevronDown size={14} aria-hidden="true" />
-                  </button>
-                  {levelMenuOpen ? (
-                    <div className="generation-level-menu-list" role="listbox" aria-label="Generation level">
-                      {levelOptions.map((option) => (
-                        <button
-                          className={level === option ? "active" : ""}
-                          type="button"
-                          role="option"
-                          aria-selected={level === option}
-                          key={option}
-                          onClick={() => updateLevel(option)}
-                        >
-                          <span>{option}</span>
-                          {level === option ? <Check size={13} /> : null}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
               </div>
-              <button
-                className="generation-icon-button generation-settings-trigger"
-                type="button"
-                aria-label="Open generation settings"
-                title="Settings"
-                onClick={openSettings}
+              <div
+                className={levelMenuOpen ? "generation-level-menu open" : "generation-level-menu"}
+                onBlur={(event) => {
+                  const nextFocus = event.relatedTarget as Node | null;
+                  if (!event.currentTarget.contains(nextFocus)) {
+                    setLevelMenuOpen(false);
+                  }
+                }}
               >
-                <Settings size={17} />
-              </button>
+                <button
+                  className="generation-level-trigger"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={levelMenuOpen}
+                  onClick={() => setLevelMenuOpen((current) => !current)}
+                >
+                  <span>{level}</span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+                {levelMenuOpen ? (
+                  <div className="generation-level-menu-list" role="listbox" aria-label="Generation level">
+                    {levelOptions.map((option) => (
+                      <button
+                        className={level === option ? "active" : ""}
+                        type="button"
+                        role="option"
+                        aria-selected={level === option}
+                        key={option}
+                        onClick={() => updateLevel(option)}
+                      >
+                        <span>{option}</span>
+                        {level === option ? <Check size={13} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </header>
 
             <div className="generation-chat-history custom-scrollbar">
@@ -806,7 +861,7 @@ export function GenerationChat() {
       {mounted && modal
         ? createPortal(
             <div className="generation-modal-backdrop" role="presentation" onMouseDown={handleBackdropMouseDown}>
-              <EffectCard animated className={`generation-dialog-card${modal.type === "settings" ? " generation-settings-card" : ""}`} glareOpacity={0.16} radius={24}>
+              <div className={`generation-dialog-card${modal.type === "settings" ? " generation-settings-card" : ""}`}>
                 {modal.type === "settings" ? (
                   <form
                     className="generation-dialog generation-settings-dialog"
@@ -820,12 +875,12 @@ export function GenerationChat() {
                     tabIndex={-1}
                   >
                     <header>
-                      <span className="generation-dialog-icon settings">
-                        <Settings size={20} />
+                      <span className="generation-dialog-icon generation-settings-icon" aria-hidden="true">
+                        <Settings size={30} />
                       </span>
                       <h2 id="generation-settings-title">Settings</h2>
-                      <button className="generation-dialog-close" type="button" aria-label="Close settings" onClick={closeModal}>
-                        <X size={17} />
+                      <button className="generation-dialog-close generation-settings-close" type="button" aria-label="Close settings" onClick={closeModal}>
+                        <X size={20} />
                       </button>
                     </header>
                     <div className="generation-dialog-body">
@@ -849,34 +904,33 @@ export function GenerationChat() {
                           </span>
                         </div>
                       </label>
-                      <div className="generation-setting-row">
+                      <div className="generation-setting-row generation-model-setting">
                         <span>Model</span>
                         <strong>{IMAGENT_GENERATION_MODEL_NAME}</strong>
                       </div>
-                      <div className="generation-setting-row level">
-                        <span>Level</span>
-                        <div className="generation-level-grid" role="radiogroup" aria-label="Generation level">
-                          {levelOptions.map((option) => (
-                            <button
-                              className={draftLevel === option ? "active" : ""}
-                              type="button"
-                              role="radio"
-                              aria-checked={draftLevel === option}
-                              key={option}
-                              onClick={() => setDraftLevel(option)}
-                            >
-                              <span>{option}</span>
-                              {draftLevel === option ? <Check size={14} /> : null}
-                            </button>
-                          ))}
+                      <div className="generation-setting-row generation-delete-all-setting">
+                        <div className="generation-setting-action-copy">
+                          <strong>Local History</strong>
+                          <small>Clear every session saved in this browser.</small>
                         </div>
+                        <button
+                          className="generation-settings-danger-action"
+                          type="button"
+                          disabled={!canDeleteAllSessions}
+                          onClick={openDeleteAllSessions}
+                        >
+                          <Trash2 size={15} />
+                          Delete All
+                        </button>
                       </div>
                     </div>
                     <footer>
                       <button className="generation-secondary-action" type="button" onClick={closeModal}>
+                        <X size={15} />
                         Cancel
                       </button>
                       <button className="generation-primary-action" type="submit" disabled={!canSaveSettings}>
+                        <Check size={15} />
                         Save
                       </button>
                     </footer>
@@ -885,7 +939,7 @@ export function GenerationChat() {
 
                 {modal.type === "edit" ? (
                   <form
-                    className="generation-dialog"
+                    className="generation-dialog generation-edit-dialog"
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="generation-edit-title"
@@ -896,20 +950,17 @@ export function GenerationChat() {
                     tabIndex={-1}
                   >
                     <header>
-                      <span className="generation-dialog-icon">
-                        <Pencil size={18} />
+                      <span className="generation-dialog-icon generation-edit-icon" aria-hidden="true">
+                        <Settings size={30} />
                       </span>
-                      <div>
-                        <h2 id="generation-edit-title">Edit session</h2>
-                        <p>Rename this session in your local history.</p>
-                      </div>
-                      <button className="generation-dialog-close" type="button" aria-label="Close edit dialog" onClick={closeModal}>
-                        <X size={17} />
+                      <h2 id="generation-edit-title">Edit</h2>
+                      <button className="generation-dialog-close generation-edit-close" type="button" aria-label="Close edit dialog" onClick={closeModal}>
+                        <X size={20} />
                       </button>
                     </header>
                     <div className="generation-dialog-body">
-                      <label className="generation-title-field">
-                        <span>Session title</span>
+                      <label className="generation-title-field generation-edit-title-field">
+                        <span>Session Name</span>
                         <input
                           value={draftTitle}
                           onChange={(event) => setDraftTitle(event.target.value)}
@@ -920,9 +971,11 @@ export function GenerationChat() {
                     </div>
                     <footer>
                       <button className="generation-secondary-action" type="button" onClick={closeModal}>
+                        <X size={15} />
                         Cancel
                       </button>
                       <button className="generation-primary-action" type="submit">
+                        <Check size={15} />
                         Save
                       </button>
                     </footer>
@@ -931,7 +984,7 @@ export function GenerationChat() {
 
                 {modal.type === "delete" ? (
                   <section
-                    className="generation-dialog danger"
+                    className="generation-dialog danger generation-delete-dialog"
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="generation-delete-title"
@@ -941,28 +994,74 @@ export function GenerationChat() {
                     tabIndex={-1}
                   >
                     <header>
-                      <span className="generation-dialog-icon danger">
-                        <AlertTriangle size={18} />
+                      <span className="generation-dialog-icon generation-delete-icon" aria-hidden="true">
+                        <Trash2 size={30} />
                       </span>
-                      <div>
-                        <h2 id="generation-delete-title">Delete session</h2>
-                        <p>{modalSession ? `Delete "${modalSession.title}" from this browser?` : "Delete this session from this browser?"}</p>
-                      </div>
-                      <button className="generation-dialog-close" type="button" aria-label="Close delete dialog" onClick={closeModal}>
-                        <X size={17} />
+                      <h2 id="generation-delete-title">Delete</h2>
+                      <button className="generation-dialog-close generation-delete-close" type="button" aria-label="Close delete dialog" onClick={closeModal}>
+                        <X size={20} />
                       </button>
                     </header>
+                    <div className="generation-dialog-body">
+                      <div className="generation-delete-summary">
+                        <span>Selected Session</span>
+                        <strong>{modalSession?.title || "This session"}</strong>
+                        <small>This local session history will be removed.</small>
+                      </div>
+                    </div>
                     <footer>
                       <button className="generation-secondary-action" type="button" onClick={closeModal}>
+                        <X size={15} />
                         Cancel
                       </button>
                       <button className="generation-danger-action" type="button" onClick={deleteSession}>
+                        <Trash2 size={15} />
                         Delete
                       </button>
                     </footer>
                   </section>
                 ) : null}
-              </EffectCard>
+
+                {modal.type === "delete-all" ? (
+                  <section
+                    className="generation-dialog danger generation-delete-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="generation-delete-all-title"
+                    ref={(node) => {
+                      modalRef.current = node;
+                    }}
+                    tabIndex={-1}
+                  >
+                    <header>
+                      <span className="generation-dialog-icon generation-delete-icon" aria-hidden="true">
+                        <Trash2 size={30} />
+                      </span>
+                      <h2 id="generation-delete-all-title">Delete All</h2>
+                      <button className="generation-dialog-close generation-delete-close" type="button" aria-label="Close delete all dialog" onClick={closeModal}>
+                        <X size={20} />
+                      </button>
+                    </header>
+                    <div className="generation-dialog-body">
+                      <div className="generation-delete-summary">
+                        <span>Local History</span>
+                        <strong>All Sessions</strong>
+                        <small>Every local session in this browser will be removed.</small>
+                      </div>
+                    </div>
+                    <footer>
+                      <button className="generation-secondary-action" type="button" onClick={closeModal}>
+                        <X size={15} />
+                        No
+                      </button>
+                      <button className="generation-danger-action" type="button" onClick={deleteAllSessions}>
+                        <Trash2 size={15} />
+                        Yes
+                      </button>
+                    </footer>
+                  </section>
+                ) : null}
+              </div>
             </div>,
             document.body
           )
@@ -1048,12 +1147,6 @@ function messageMetaItems(message: ChatMessage) {
   }
   if (message.capability) {
     items.push(message.capability);
-  }
-  if (message.model) {
-    items.push(message.model);
-  }
-  if (message.quality) {
-    items.push(message.quality);
   }
   if (typeof message.candidateCount === "number" && message.candidateCount > 0) {
     items.push(`${message.candidateCount} candidates`);
