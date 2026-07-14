@@ -1,6 +1,19 @@
 "use client";
 
-import { Activity, ArrowUpRight, CheckCircle2, GitMerge, GitPullRequestClosed, Minus, Search, Timer, TrendingDown, TrendingUp, WalletCards, XCircle } from "lucide-react";
+import {
+  Activity,
+  ArrowUpRight,
+  CheckCircle2,
+  GitMerge,
+  GitPullRequestClosed,
+  Minus,
+  Search,
+  Timer,
+  TrendingDown,
+  TrendingUp,
+  WalletCards,
+  XCircle
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { LeaderboardEntry } from "@/lib/reports";
@@ -69,12 +82,33 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
     });
   }, [entries, filter, query]);
 
+  const visibleStats = useMemo(() => {
+    const score = visibleEntries.length
+      ? visibleEntries.reduce((total, entry) => total + entry.score, 0) / visibleEntries.length
+      : 0;
+    const eligible = visibleEntries.filter((entry) => entry.improvement.mergeEligible).length;
+    const pass = visibleEntries.filter((entry) => entry.status === "pass").length;
+    const cost = visibleEntries.reduce((total, entry) => total + entry.costUsd, 0);
+    return {
+      cost,
+      eligible,
+      pass,
+      score
+    };
+  }, [visibleEntries]);
+
   return (
     <section className="subnet-table">
       <div className="table-toolbar">
         <div>
           <h2>Benchmark Archive</h2>
-          <p>{visibleEntries.length} of {entries.length} reports · refreshes every 30s</p>
+          <p>{visibleEntries.length} of {entries.length} reports - refreshes every 30s</p>
+          <div className="table-summary-grid" aria-label="Filtered benchmark summary">
+            <SummaryChip label="Average" value={visibleStats.score.toFixed(1)} />
+            <SummaryChip label="Eligible" value={String(visibleStats.eligible)} />
+            <SummaryChip label="Pass" value={String(visibleStats.pass)} />
+            <SummaryChip label="Cost" value={`$${visibleStats.cost.toFixed(4)}`} />
+          </div>
         </div>
         <div className="leaderboard-controls">
           <span className="leaderboard-live"><Activity size={13} /> Archive</span>
@@ -152,6 +186,7 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
                   <div className="score-cell">
                     <strong>{entry.score.toFixed(2)}</strong>
                     <span><i style={{ width: `${Math.max(3, Math.min(100, entry.score))}%` }} /></span>
+                    <small className="score-context">{formatScoreContext(entry)}</small>
                     {entry.dimensions.length > 0 ? (
                       <div className="dimension-strip">
                         {entry.dimensions.slice(0, 3).map((dimension) => (
@@ -207,6 +242,24 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
       </div>
     </section>
   );
+}
+
+function SummaryChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="table-summary-chip">
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
+function formatScoreContext(entry: LeaderboardEntry) {
+  const capabilityCount = entry.dimensions.length;
+  const baseline = entry.improvement.baselineScore;
+  if (baseline !== null) {
+    return `${capabilityCount} dimensions vs ${baseline.toFixed(1)}`;
+  }
+  return capabilityCount ? `${capabilityCount} dimensions` : "dimension data pending";
 }
 
 function formatDelta(value: number | null) {

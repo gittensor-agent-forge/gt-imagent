@@ -1,4 +1,18 @@
-import { Activity, BarChart3, Crown, ImageIcon, Medal, ShieldCheck, Timer, TrendingUp, WalletCards } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  Crown,
+  Gauge,
+  ImageIcon,
+  Layers3,
+  Medal,
+  Radar,
+  Scale,
+  ShieldCheck,
+  Timer,
+  TrendingUp,
+  WalletCards
+} from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { LeaderboardBoard } from "@/app/components/LeaderboardBoard";
@@ -20,18 +34,33 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+type ScoreBucket = {
+  count: number;
+  label: string;
+  max: number;
+  min: number;
+};
+
+type CapabilitySummary = {
+  average: number;
+  name: string;
+  samples: number;
+};
+
 export default async function LeaderboardPage() {
   const entries = await listLeaderboardEntries();
   const topThree = entries.slice(0, 3);
   const merged = entries.filter((entry) => entry.pullRequest.state === "merged").length;
   const failed = entries.filter((entry) => entry.status === "fail").length;
+  const passCount = entries.filter((entry) => entry.status === "pass").length;
   const averageScore = entries.length
     ? entries.reduce((total, entry) => total + entry.score, 0) / entries.length
     : 0;
   const topScore = entries[0]?.score ?? 0;
   const fastest = entries.length ? Math.min(...entries.map((entry) => entry.latencyP95Ms)) : 0;
   const totalCost = entries.reduce((total, entry) => total + entry.costUsd, 0);
-  const leader = entries[0];
+  const leader = entries[0] ?? null;
+  const runnerUp = entries[1] ?? null;
   const chronological = [...entries].sort((left, right) => Date.parse(left.completedAt) - Date.parse(right.completedAt));
   const latestReport = chronological[chronological.length - 1] ?? null;
   const projectBaseline = leader?.improvement.baselineScore ?? null;
@@ -47,13 +76,16 @@ export default async function LeaderboardPage() {
     return best;
   }, null);
   const latestFive = chronological.slice(-5).reverse();
-  const featureComparison = buildFeatureComparison(leader ?? null, entries);
+  const scoreFloor = entries.at(-1)?.score ?? topScore;
+  const scoreSpread = entries.length > 1 ? topScore - scoreFloor : 0;
+  const scoreDistribution = buildScoreDistribution(entries);
+  const capabilitySummary = buildCapabilitySummary(entries);
 
   return (
     <div className="leaderboard-page">
       <section className="leaderboard-hero">
         <div className="leaderboard-hero-copy">
-          <span className="page-kicker">Powered by Gittensor · subnet 74 · benchmark archive</span>
+          <span className="page-kicker">Powered by Gittensor - subnet 74 - benchmark archive</span>
           <h1>Inspect Image-Agent Benchmark History</h1>
           <p>
             Every report is ranked by score, PR outcome, baseline delta, latency, cost, and judge dimensions.
@@ -106,12 +138,12 @@ export default async function LeaderboardPage() {
           <ProjectMetric
             label="Current frontier"
             value={leader ? leader.score.toFixed(2) : "0.00"}
-            detail={leader ? `@${leader.contributor.login} · ${leader.improvement.label}` : "waiting for reports"}
+            detail={leader ? `@${leader.contributor.login} - ${leader.improvement.label}` : "waiting for reports"}
           />
           <ProjectMetric
             label="Best PR uplift"
             value={bestImprovement ? formatDelta(bestImprovement.improvement.delta) : "N/A"}
-            detail={bestImprovement ? `@${bestImprovement.contributor.login} · ${pullRequestLabel(bestImprovement)}` : "baseline unavailable"}
+            detail={bestImprovement ? `@${bestImprovement.contributor.login} - ${pullRequestLabel(bestImprovement)}` : "baseline unavailable"}
           />
           <ProjectMetric
             label="Merged proof"
@@ -137,10 +169,16 @@ export default async function LeaderboardPage() {
         ) : null}
       </section>
 
-      <FeatureComparisonPanel
-        baseline={featureComparison.baseline}
-        current={leader ?? null}
-        rows={featureComparison.rows}
+      <ReviewConsolePanel
+        averageScore={averageScore}
+        capabilitySummary={capabilitySummary}
+        eligible={eligible}
+        entries={entries}
+        leader={leader}
+        passCount={passCount}
+        runnerUp={runnerUp}
+        scoreDistribution={scoreDistribution}
+        scoreSpread={scoreSpread}
       />
 
       <section className="podium-grid">
@@ -154,8 +192,8 @@ export default async function LeaderboardPage() {
               <p>@{entry.contributor.login}</p>
             </div>
             <strong>{entry.score.toFixed(2)}</strong>
-            <span>{entry.pullRequest.state} · {pullRequestLabel(entry)}</span>
-            <small>{formatDelta(entry.improvement.delta)} · {entry.improvement.label}</small>
+            <span>{entry.pullRequest.state} - {pullRequestLabel(entry)}</span>
+            <small>{formatDelta(entry.improvement.delta)} - {entry.improvement.label}</small>
           </a>
         ))}
       </section>
@@ -164,13 +202,6 @@ export default async function LeaderboardPage() {
     </div>
   );
 }
-
-type FeatureComparisonRow = {
-  baseline: number | null;
-  current: number | null;
-  delta: number | null;
-  name: string;
-};
 
 function HeroStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
@@ -184,89 +215,160 @@ function HeroStat({ icon, label, value }: { icon: ReactNode; label: string; valu
   );
 }
 
-function FeatureComparisonPanel({
-  baseline,
-  current,
-  rows
+function ReviewConsolePanel({
+  averageScore,
+  capabilitySummary,
+  eligible,
+  entries,
+  leader,
+  passCount,
+  runnerUp,
+  scoreDistribution,
+  scoreSpread
 }: {
-  baseline: LeaderboardEntry | null;
-  current: LeaderboardEntry | null;
-  rows: FeatureComparisonRow[];
+  averageScore: number;
+  capabilitySummary: CapabilitySummary[];
+  eligible: number;
+  entries: LeaderboardEntry[];
+  leader: LeaderboardEntry | null;
+  passCount: number;
+  runnerUp: LeaderboardEntry | null;
+  scoreDistribution: ScoreBucket[];
+  scoreSpread: number;
 }) {
-  const baselineScore = baseline?.score ?? current?.improvement.baselineScore ?? null;
-  const overallDelta = current && baselineScore !== null ? current.score - baselineScore : null;
-  const visibleRows: FeatureComparisonRow[] = [
-    {
-      baseline: baselineScore,
-      current: current?.score ?? null,
-      delta: overallDelta,
-      name: "overall_benchmark"
-    },
-    ...rows
-  ];
-  const averageFeatureDelta = averageDelta(rows);
+  const weakest = [...capabilitySummary].reverse().slice(0, 3);
+  const strongest = capabilitySummary.slice(0, 3);
+  const runnerGap = leader && runnerUp ? leader.score - runnerUp.score : null;
+  const passRate = entries.length ? (passCount / entries.length) * 100 : 0;
 
   return (
-    <section className="feature-comparison" aria-label="Benchmark feature improvement">
-      <div className="feature-comparison-header">
+    <section className="leaderboard-review-console" aria-label="Benchmark review console">
+      <div className="review-console-header">
         <div>
-          <span className="live-chip"><BarChart3 size={13} /> Feature delta</span>
-          <h2>Before vs current frontier</h2>
+          <span className="live-chip"><Radar size={13} /> Review console</span>
+          <h2>Compare the archive without opening every report</h2>
           <p>
-            {baseline
-              ? `Comparing @${current?.contributor.login ?? "frontier"} against @${baseline.contributor.login}.`
-              : current?.improvement.baselineScore !== null
-                ? "The baseline score is known, but the matching baseline report has not been imported for feature-level comparison."
-                : "Baseline feature scores will connect once benchmark reports include ranking metadata."}
+            Real report data is folded into score bands, capability averages, frontier gap,
+            and review signals so maintainers can scan quality, consistency, and merge readiness.
           </p>
         </div>
-        <div className="feature-summary-grid">
-          <FeatureSummary label="Current top" value={current ? current.score.toFixed(2) : "0.00"} detail={current ? `@${current.contributor.login}` : "waiting"} />
-          <FeatureSummary label="Before score" value={baselineScore === null ? "N/A" : baselineScore.toFixed(2)} detail={baseline ? `@${baseline.contributor.login}` : "baseline"} />
-          <FeatureSummary label="Feature avg" value={formatDelta(averageFeatureDelta)} detail={rows.length ? `${rows.length} dimensions` : "pending"} />
+        <div className="review-console-metrics" aria-label="Archive health">
+          <ReviewMetric icon={<BarChart3 size={15} />} label="Average" value={averageScore.toFixed(1)} />
+          <ReviewMetric icon={<Scale size={15} />} label="Spread" value={scoreSpread.toFixed(1)} />
+          <ReviewMetric icon={<ShieldCheck size={15} />} label="Pass rate" value={`${passRate.toFixed(0)}%`} />
         </div>
       </div>
 
-      <div className="feature-legend" aria-hidden="true">
-        <span><i className="before" />Before</span>
-        <span><i className="current" />Current top</span>
-      </div>
-
-      <div className="feature-bars">
-        {visibleRows.map((row) => (
-          <div className="feature-row" key={row.name}>
-            <div className="feature-row-label">
-              <strong>{formatFeatureName(row.name)}</strong>
-              <span>{formatScore(row.baseline)} before · {formatScore(row.current)} current</span>
-            </div>
-            <div className="feature-bar-stack">
-              <div className="feature-bar-line before">
-                <span style={{ width: scoreWidth(row.baseline) }} />
-              </div>
-              <div className="feature-bar-line current">
-                <span style={{ width: scoreWidth(row.current) }} />
-              </div>
-            </div>
-            <span className={`delta-badge ${deltaTone(row.delta)}`}>{formatDelta(row.delta)}</span>
+      <div className="review-console-grid">
+        <article className="review-card review-card-wide">
+          <div className="review-card-head">
+            <span><Gauge size={14} /> Score distribution</span>
+            <strong>{entries.length} reports</strong>
           </div>
-        ))}
-      </div>
+          <div className="score-bands">
+            {scoreDistribution.map((bucket) => (
+              <div className="score-band" key={bucket.label}>
+                <div>
+                  <strong>{bucket.label}</strong>
+                  <span>{bucket.count} runs</span>
+                </div>
+                <i>
+                  <b style={{ width: entries.length ? `${Math.max(6, (bucket.count / entries.length) * 100)}%` : "0%" }} />
+                </i>
+              </div>
+            ))}
+          </div>
+        </article>
 
-      {rows.length === 0 ? (
-        <div className="feature-empty">
-          Dimension-level bars will appear after OpenRouter vision judge reports include per-feature scores.
-        </div>
-      ) : null}
+        <article className="review-card">
+          <div className="review-card-head">
+            <span><Crown size={14} /> Frontier gap</span>
+            <strong>{formatDelta(runnerGap)}</strong>
+          </div>
+          <div className="frontier-duel">
+            <ReviewCompetitor entry={leader} label="Leader" />
+            <ReviewCompetitor entry={runnerUp} label="Runner-up" />
+          </div>
+        </article>
+
+        <article className="review-card">
+          <div className="review-card-head">
+            <span><Layers3 size={14} /> Capability profile</span>
+            <strong>{capabilitySummary.length || 0}</strong>
+          </div>
+          {capabilitySummary.length > 0 ? (
+            <div className="capability-review">
+              <div>
+                <span>Strongest</span>
+                {strongest.map((item) => <CapabilityPill item={item} key={`strong-${item.name}`} />)}
+              </div>
+              <div>
+                <span>Needs attention</span>
+                {weakest.map((item) => <CapabilityPill item={item} key={`weak-${item.name}`} />)}
+              </div>
+            </div>
+          ) : (
+            <p className="review-card-empty">Dimension scores will appear once judge reports include capability data.</p>
+          )}
+        </article>
+
+        <article className="review-card review-card-signals">
+          <div className="review-card-head">
+            <span><Activity size={14} /> Review signals</span>
+            <strong>{eligible}</strong>
+          </div>
+          <div className="signal-list">
+            <span><ShieldCheck size={14} /> {eligible} merge eligible</span>
+            <span><Medal size={14} /> {passCount} passing reports</span>
+            <span><Timer size={14} /> {formatLatency(entries)}</span>
+            <span><WalletCards size={14} /> {formatCost(entries)}</span>
+          </div>
+        </article>
+      </div>
     </section>
   );
 }
 
-function FeatureSummary({ detail, label, value }: { detail: string; label: string; value: string }) {
+function ReviewMetric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="feature-summary">
+    <div className="review-metric">
+      {icon}
+      <div>
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCompetitor({ entry, label }: { entry: LeaderboardEntry | null; label: string }) {
+  return (
+    <div className="review-competitor">
       <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
+      {entry ? (
+        <>
+          <div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={entry.contributor.avatar_url || ""} alt="" />
+            <strong>@{entry.contributor.login}</strong>
+          </div>
+          <small>{entry.score.toFixed(2)} - {pullRequestLabel(entry)}</small>
+        </>
+      ) : (
+        <small>No report yet</small>
+      )}
+    </div>
+  );
+}
+
+function CapabilityPill({ item }: { item: CapabilitySummary }) {
+  return (
+    <div className="capability-pill">
+      <div>
+        <strong>{formatFeatureName(item.name)}</strong>
+        <small>{item.samples} samples</small>
+      </div>
+      <span>{item.average.toFixed(1)}</span>
     </div>
   );
 }
@@ -285,79 +387,59 @@ function pullRequestLabel(entry: LeaderboardEntry) {
   return entry.pullRequest.number === null ? "report metadata" : `PR #${entry.pullRequest.number}`;
 }
 
-function buildFeatureComparison(current: LeaderboardEntry | null, entries: LeaderboardEntry[]) {
-  if (!current) {
-    return { baseline: null, rows: [] as FeatureComparisonRow[] };
-  }
+function buildScoreDistribution(entries: LeaderboardEntry[]): ScoreBucket[] {
+  const buckets: ScoreBucket[] = [
+    { count: 0, label: "90-100", max: 100, min: 90 },
+    { count: 0, label: "75-89", max: 89.999, min: 75 },
+    { count: 0, label: "60-74", max: 74.999, min: 60 },
+    { count: 0, label: "<60", max: 59.999, min: -Infinity }
+  ];
 
-  const baseline = findBaselineEntry(current, entries);
-  const currentDimensions = dimensionMap(current);
-  const baselineDimensions = baseline ? dimensionMap(baseline) : new Map<string, number>();
-  const names = Array.from(new Set([...currentDimensions.keys(), ...baselineDimensions.keys()]));
+  entries.forEach((entry) => {
+    const bucket = buckets.find((item) => entry.score >= item.min && entry.score <= item.max);
+    if (bucket) {
+      bucket.count += 1;
+    }
+  });
 
-  const rows = names
-    .map((name) => {
-      const currentScore = currentDimensions.get(name) ?? null;
-      const baselineScore = baselineDimensions.get(name) ?? null;
-      return {
-        baseline: baselineScore,
-        current: currentScore,
-        delta: currentScore === null || baselineScore === null ? null : currentScore - baselineScore,
-        name
-      };
-    })
-    .sort((left, right) => {
-      if (left.delta !== null && right.delta !== null && right.delta !== left.delta) {
-        return right.delta - left.delta;
-      }
-      return formatFeatureName(left.name).localeCompare(formatFeatureName(right.name));
+  return buckets;
+}
+
+function buildCapabilitySummary(entries: LeaderboardEntry[]) {
+  const totals = new Map<string, { samples: number; total: number }>();
+  entries.forEach((entry) => {
+    entry.dimensions.forEach((dimension) => {
+      const existing = totals.get(dimension.name) ?? { samples: 0, total: 0 };
+      existing.samples += 1;
+      existing.total += dimension.score;
+      totals.set(dimension.name, existing);
     });
+  });
 
-  return { baseline, rows };
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({
+      average: value.samples ? value.total / value.samples : 0,
+      name,
+      samples: value.samples
+    }))
+    .sort((left, right) => right.average - left.average);
 }
 
-function findBaselineEntry(current: LeaderboardEntry, entries: LeaderboardEntry[]) {
-  const candidates = entries.filter((entry) => entry.runId !== current.runId);
-  const baselineCommit = current.improvement.baselineCommit;
-  if (!baselineCommit) {
-    return null;
+function formatLatency(entries: LeaderboardEntry[]) {
+  if (!entries.length) {
+    return "No latency";
   }
+  const fastest = Math.min(...entries.map((entry) => entry.latencyP95Ms));
+  const slowest = Math.max(...entries.map((entry) => entry.latencyP95Ms));
+  return `${fastest.toFixed(0)}-${slowest.toFixed(0)} ms p95`;
+}
 
-  const commitMatch = candidates.find((entry) => commitMatches(entry.commitSha, baselineCommit));
-  if (commitMatch) {
-    return commitMatch;
+function formatCost(entries: LeaderboardEntry[]) {
+  if (!entries.length) {
+    return "$0.00000 total";
   }
-
-  return null;
-}
-
-function dimensionMap(entry: LeaderboardEntry) {
-  return new Map(entry.dimensions.map((dimension) => [dimension.name, dimension.score]));
-}
-
-function commitMatches(commitSha: string, baselineCommit: string) {
-  return commitSha === baselineCommit || commitSha.startsWith(baselineCommit) || baselineCommit.startsWith(commitSha);
-}
-
-function averageDelta(rows: FeatureComparisonRow[]) {
-  const deltas = rows
-    .map((row) => row.delta)
-    .filter((value): value is number => value !== null);
-  if (!deltas.length) {
-    return null;
-  }
-  return deltas.reduce((total, value) => total + value, 0) / deltas.length;
-}
-
-function scoreWidth(value: number | null) {
-  if (value === null) {
-    return "0%";
-  }
-  return `${Math.max(0, Math.min(100, value))}%`;
-}
-
-function formatScore(value: number | null) {
-  return value === null ? "N/A" : value.toFixed(1);
+  const total = entries.reduce((sum, entry) => sum + entry.costUsd, 0);
+  return `$${total.toFixed(5)} total`;
 }
 
 function formatFeatureName(value: string) {
