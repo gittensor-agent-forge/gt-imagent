@@ -456,7 +456,8 @@ export function GenerationChat() {
     }
 
     const now = new Date().toISOString();
-    const sessionId = sessions.length ? activeSession.id : crypto.randomUUID();
+    const isNewSession = sessions.length === 0;
+    const sessionId = isNewSession ? crypto.randomUUID() : activeSession.id;
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -469,6 +470,9 @@ export function GenerationChat() {
       return;
     }
 
+    if (isNewSession) {
+      setActiveSessionId(sessionId);
+    }
     appendSessionMessages(sessionId, [userMessage], titleFromPrompt(content), now);
     setPrompt("");
     clearInputImage();
@@ -575,7 +579,6 @@ export function GenerationChat() {
         };
       });
     });
-    setActiveSessionId(sessionId);
   }
 
   function openSettings() {
