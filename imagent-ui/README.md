@@ -16,10 +16,9 @@ without requiring visitors to know Discord context or subnet shorthand: the
 generation playground, benchmark leaderboard, and imported reports all represent
 the open image-agent competition that Gittensor helps power.
 
-The public site at `https://tryimagent.com` should clearly explain that
-contributors submit agent improvements through GitHub PRs, benchmark rounds
-score those submissions, and winning agents become public reference code in the
-Imagent repository.
+The public site at `https://tryimagent.com` should clearly explain the
+historical benchmark archive and the active, manually reviewed Leaderboard UI
+competition.
 
 ## Development
 
@@ -51,8 +50,9 @@ Import a benchmark report:
 npm run import-report -- ../imagent-bench/benchmark-output/benchmark-report.json
 ```
 
-The UI reads benchmark reports from `data/reports`. Official benchmark runs are
-still produced by `imagent-bench`.
+The UI reads benchmark reports from `data/reports`. `imagent-bench` remains
+available for local research, but scheduled agent benchmark rounds are currently
+paused.
 
 ## Deployment
 

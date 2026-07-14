@@ -26,13 +26,13 @@ import { listLeaderboardEntries } from "@/lib/reports";
 
 export const metadata: Metadata = {
   title: "Imagent | Image Generation Agents",
-  description: "A Gittensor-powered open competition for image-generation agents built around one fixed image model.",
+  description: "A Gittensor-powered research platform for image-generation agents and transparent benchmark history.",
   alternates: {
     canonical: "/"
   },
   openGraph: {
     title: "Imagent | Image Generation Agents",
-    description: "A Gittensor-powered open competition for image-generation agents built around one fixed image model.",
+    description: "A Gittensor-powered research platform for image-generation agents and transparent benchmark history.",
     url: "/"
   }
 };
@@ -88,27 +88,27 @@ const contributorSteps: Array<{
   tone: "submit" | "bench" | "promote";
 }> = [
   {
-    copy: "One focused agent PR enters the round",
-    detail: "Contributor PRs stay eligible when they only update the agent",
+    copy: "One focused Leaderboard UI PR enters manual review",
+    detail: "Only approved Leaderboard UI files can change",
     icon: GitPullRequestArrow,
     label: "Pull Request",
-    title: "Submit Agent",
+    title: "Submit Design",
     tone: "submit"
   },
   {
-    copy: "Same model benchmark score",
-    detail: "The run must improve beyond the threshold over the last winner",
+    copy: "A screenshot or video proves the visual change",
+    detail: "Missing evidence keeps the PR open with needs-evidence",
     icon: Workflow,
-    label: "Round Gate",
-    title: "Benchmark Proof",
+    label: "Evidence Gate",
+    title: "Show The Result",
     tone: "bench"
   },
   {
-    copy: "Best eligible strategy becomes the new reference",
-    detail: "The bot updates last_winner and archives the code in winners",
+    copy: "Maintainer review decides whether the design lands",
+    detail: "Leaderboard UI work is never benchmarked or auto-merged",
     icon: Trophy,
-    label: "Promotion",
-    title: "Archive Winner",
+    label: "Manual Review",
+    title: "Merge Deliberately",
     tone: "promote"
   }
 ];
@@ -131,7 +131,7 @@ export default async function HomePage() {
           </div>
           <h1 id="home-title">One Model Better Agents</h1>
           <p className="imagent-landing__hero-lede">
-            Imagent keeps the image model fixed and lets agent code compete through public benchmark rounds
+            Imagent keeps the image model fixed and makes image-agent progress visible through public benchmark history
           </p>
           <div className="imagent-landing__actions">
             <Link className="imagent-landing__button imagent-landing__button--primary" href="/generation">
@@ -149,22 +149,22 @@ export default async function HomePage() {
             </StaticEffectCard>
             <StaticEffectCard className="imagent-landing__hero-card" radius={17}>
               <ShieldCheck size={17} />
-              <span>Rule</span>
-              <strong>Beat Last Winner</strong>
+              <span>Current Track</span>
+              <strong>Leaderboard UI</strong>
             </StaticEffectCard>
           </div>
-          <div className="imagent-landing__hero-signal" aria-label="Live round signal">
+          <div className="imagent-landing__hero-signal" aria-label="Project signals">
             <span>
-              <strong>2x daily</strong>
-              <small>Round cadence</small>
+              <strong>Manual</strong>
+              <small>UI review</small>
             </span>
             <span>
               <strong>{entries.length}</strong>
-              <small>Reports scored</small>
+              <small>Reports archived</small>
             </span>
             <span>
-              <strong>{eligible}</strong>
-              <small>Eligible agents</small>
+              <strong>{merged}</strong>
+              <small>Merged PRs</small>
             </span>
           </div>
         </div>
@@ -211,13 +211,13 @@ export default async function HomePage() {
           <SectionIntro
             eyebrow="Contribute"
             icon={GitPullRequestArrow}
-            title="Simple Path To Promotion"
-            copy="One PR per round Benchmark gate Winner history"
+            title="Simple Path To Review"
+            copy="One PR Visual evidence Manual merge"
           />
           <div className="imagent-landing__promotion-rule" aria-label="Promotion rule">
-            <span><Crown size={15} /> Promotion rule</span>
-            <strong>Highest Eligible Score Wins</strong>
-            <p>Threshold must beat the last winner</p>
+            <span><Crown size={15} /> Review rule</span>
+            <strong>Scoped Leaderboard UI</strong>
+            <p>Visual evidence is required before manual review</p>
           </div>
         </div>
         <div className="imagent-landing__promotion-flow" aria-label="Contribution promotion flow" data-reveal="fade-up" data-reveal-delay="1">
@@ -243,9 +243,9 @@ export default async function HomePage() {
           })}
         </div>
         <div className="imagent-landing__promotion-notes" aria-label="Promotion safeguards">
-          <span><ShieldCheck size={14} /> agent only PR</span>
-          <span><Workflow size={14} /> benchmark scored</span>
-          <span><Trophy size={14} /> public winner code</span>
+          <span><ShieldCheck size={14} /> Leaderboard scope</span>
+          <span><Workflow size={14} /> visual evidence</span>
+          <span><Trophy size={14} /> manual merge</span>
         </div>
       </section>
 
@@ -255,8 +255,8 @@ export default async function HomePage() {
             <Sparkles size={13} />
             Start
           </span>
-          <h2 id="landing-cta-title">Enter The Agent Bench</h2>
-          <p>Generate with the fixed model inspect the score and improve the agent</p>
+          <h2 id="landing-cta-title">Explore The Agent Bench</h2>
+          <p>Generate with the fixed model inspect the archive and follow active Leaderboard work</p>
           <div className="imagent-landing__actions">
             <Link className="imagent-landing__button imagent-landing__button--primary" href="/generation">
               Open Generation <Sparkles size={17} />
@@ -282,11 +282,15 @@ function RoundCockpit({
   leader: LeaderboardEntry | null;
   merged: number;
 }) {
+  const archiveLeaderLabel = leader
+    ? "Rank " + leader.rank + " archive leader"
+    : "No archive leader";
+
   return (
-    <section className="imagent-landing__cockpit" aria-label="Current benchmark winner">
+    <section className="imagent-landing__cockpit" aria-label="Benchmark archive leader">
       <div className="imagent-landing__cockpit-top">
-        <span><Trophy size={16} /> Winner</span>
-        <strong className="imagent-landing__king-mark" aria-label={leader ? `Rank ${leader.rank} winner` : "Open round winner"}>
+        <span><Trophy size={16} /> Archive Leader</span>
+        <strong className="imagent-landing__king-mark" aria-label={archiveLeaderLabel}>
           <Crown size={30} />
         </strong>
       </div>
@@ -302,7 +306,7 @@ function RoundCockpit({
         <div>
           <span>Agent</span>
           <strong>{leader?.agentName ?? "No reports"}</strong>
-          <p>{leader ? `@${leader.contributor.login}` : "Open round"}</p>
+          <p>{leader ? "@" + leader.contributor.login : "Awaiting report"}</p>
         </div>
       </div>
       <div className="imagent-landing__cockpit-metrics">
@@ -317,8 +321,8 @@ function RoundCockpit({
       </div>
       <div className="imagent-landing__cockpit-footer">
         <span>{entries.length} reports</span>
-        <span>{eligible} eligible</span>
-        <span>{merged} merged</span>
+        <span>{eligible} historical eligible</span>
+        <span>{merged} merged PRs</span>
       </div>
     </section>
   );

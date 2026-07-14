@@ -73,11 +73,11 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
     <section className="subnet-table">
       <div className="table-toolbar">
         <div>
-          <h2>All benchmarked miners</h2>
-          <p>{visibleEntries.length} of {entries.length} reports · auto-refreshes every 30s</p>
+          <h2>Benchmark Archive</h2>
+          <p>{visibleEntries.length} of {entries.length} reports · refreshes every 30s</p>
         </div>
         <div className="leaderboard-controls">
-          <span className="leaderboard-live"><Activity size={13} /> Live</span>
+          <span className="leaderboard-live"><Activity size={13} /> Archive</span>
           <label className="leaderboard-search">
             <Search size={15} />
             <input

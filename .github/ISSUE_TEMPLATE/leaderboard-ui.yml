@@ -1,0 +1,38 @@
+name: Leaderboard UI proposal
+description: Propose or claim a focused improvement to the Imagent Leaderboard page
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The active contributor competition is Leaderboard UI. Review
+        [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) before opening a PR.
+  - type: input
+    id: area
+    attributes:
+      label: Leaderboard area
+      description: Which part of the page should change?
+      placeholder: hero | ranking table | filters | podium | mobile layout
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What is unclear, incomplete, or not working well today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed UI change
+      description: Describe the intended interaction, visual hierarchy, and affected files.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: References or visual direction
+      description: Add screenshots, links, or concise visual references if available.
+    validations:
+      required: false

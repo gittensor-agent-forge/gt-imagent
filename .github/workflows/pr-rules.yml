@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate contributor PR rules
+      - name: Validate Leaderboard UI contributor rules
         uses: actions/github-script@v7
         with:
           script: |
@@ -22,24 +22,53 @@ jobs:
             const repo = context.repo.repo;
             const pull_number = context.payload.pull_request.number;
             const pr = context.payload.pull_request;
-            const isSameRepoPr = pr.head.repo.full_name === `${owner}/${repo}`;
             const labels = {
-              pass: { name: 'pr-rules-pass', color: '2da44e' },
-              generation: { name: 'generation-ui', color: '0969da' },
-              generationPass: { name: 'generation-ui-pass', color: '2da44e' },
+              leaderboard: { name: 'leaderboard-ui', color: '0969da' },
+              leaderboardPass: { name: 'leaderboard-ui-pass', color: '2da44e' },
               needsEvidence: { name: 'needs-evidence', color: 'fbca04' },
               invalid: { name: 'invalid-pr', color: 'd73a4a' },
-              duplicate: { name: 'duplicate-pr', color: 'd73a4a' },
-              needsRebase: { name: 'needs-rebase', color: 'fbca04' }
+              duplicate: { name: 'duplicate-pr', color: 'd73a4a' }
             };
-            const evidenceCommentMarker = '<!-- imagent:needs-generation-evidence -->';
+            const legacyLabels = [
+              'agent-improvement',
+              'pr-rules-pass',
+              'generation-ui',
+              'generation-ui-pass',
+              'needs-rebase',
+              'benchmark-fail',
+              'benchmark-pass',
+              'benchmark-passed',
+              'benchmark-regression',
+              'benchmark-running',
+              'round-benchmark-running',
+              'round-eligible',
+              'round-winner',
+              'below-threshold'
+            ];
+            const evidenceCommentMarker = '<!-- imagent:needs-leaderboard-evidence -->';
+            const requiredSections = [
+              '## Summary',
+              '## Motivation',
+              '## Changes',
+              '## Testing'
+            ];
+            const leaderboardAllowedFiles = new Set([
+              'imagent-ui/app/leaderboard/page.tsx',
+              'imagent-ui/app/components/LeaderboardBoard.tsx',
+              'imagent-ui/app/styles.css'
+            ]);
 
             for (const label of Object.values(labels)) {
               try {
                 await github.rest.issues.getLabel({ owner, repo, name: label.name });
               } catch (error) {
                 if (error.status === 404) {
-                  await github.rest.issues.createLabel({ owner, repo, name: label.name, color: label.color });
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: label.name,
+                    color: label.color
+                  });
                 } else {
                   throw error;
                 }
@@ -57,37 +86,51 @@ jobs:
             const trustedAuthorAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
             const isMaintainerPr = pr.user.login === owner || trustedAuthorAssociations.has(pr.author_association);
             const titlePattern = /^(feat|fix|refactor|docs|test|perf|chore|ci|build|style): .+/;
-            const agentRequiredSections = [
-              '## Summary',
-              '## Motivation',
-              '## Changes',
-              '## Testing',
-              '## Benchmark Impact'
-            ];
-            const generationRequiredSections = [
-              '## Summary',
-              '## Motivation',
-              '## Changes',
-              '## Testing'
-            ];
-            const agentPath = 'agent/agent.py';
-            const generationAllowedFiles = new Set([
-              'imagent-ui/app/generation/page.tsx',
-              'imagent-ui/app/components/GenerationChat.tsx',
-              'imagent-ui/app/components/EffectCard.tsx',
-              'imagent-ui/app/components/BorderGlow.tsx',
-              'imagent-ui/app/components/BorderGlow.css',
-              'imagent-ui/app/components/GlareHover.tsx',
-              'imagent-ui/app/components/GlareHover.css',
-              'imagent-ui/app/components/ScrollReveal.tsx',
-              'imagent-ui/app/styles.css'
-            ]);
+
+            function isAllowedLeaderboardFile(filename) {
+              if (leaderboardAllowedFiles.has(filename)) {
+                return true;
+              }
+              return /^imagent-ui\/app\/leaderboard\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.(?:tsx|css)$/.test(filename);
+            }
+
+            function checkedBox(text, label) {
+              const normalizedLabel = label.replace(/\s+/g, '\\s+');
+              return new RegExp('(^|\\n)\\s*-\\s*\\[[xX]\\]\\s*' + normalizedLabel + '\\b').test(text);
+            }
+
+            function hasVisualEvidence(text) {
+              return /!\[[^\]]*\]\([^)]+\)|https?:\/\/\S*(github\.com\/user-attachments\/assets\/|githubusercontent\.com\/|\.png|\.jpe?g|\.gif|\.webp|\.mp4|\.mov|\.webm|loom\.com\/share\/|youtube\.com\/watch|youtu\.be\/)/i.test(text);
+            }
+
+            function classifyContribution(text) {
+              if (!checkedBox(text, 'Leaderboard UI')) {
+                return {
+                  mode: 'invalid',
+                  reason: 'The active competition accepts only Leaderboard UI submissions. Select Leaderboard UI in the PR template.'
+                };
+              }
+              return { mode: 'leaderboard-ui', reason: '' };
+            }
+
+            function isLeaderboardSubmission(text, changedFiles) {
+              return checkedBox(text, 'Leaderboard UI')
+                && changedFiles.length > 0
+                && changedFiles.every(isAllowedLeaderboardFile);
+            }
 
             async function removeLabel(name) {
               try {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number: pull_number, name });
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  name
+                });
               } catch (error) {
-                if (error.status !== 404) throw error;
+                if (error.status !== 404) {
+                  throw error;
+                }
               }
             }
 
@@ -105,15 +148,15 @@ jobs:
                 per_page: 100
               });
               return comments.find((comment) => (
-                comment.user?.type === 'Bot' &&
-                typeof comment.body === 'string' &&
-                comment.body.includes(marker)
+                comment.user?.type === 'Bot'
+                && typeof comment.body === 'string'
+                && comment.body.includes(marker)
               ));
             }
 
-            async function upsertBotComment(marker, body) {
+            async function upsertBotComment(marker, commentBody) {
               const existing = await findBotComment(marker);
-              const fullBody = `${marker}\n${body}`;
+              const fullBody = marker + '\n' + commentBody;
               if (existing) {
                 await github.rest.issues.updateComment({
                   owner,
@@ -131,7 +174,7 @@ jobs:
               }
             }
 
-            async function updateBotCommentIfPresent(marker, body) {
+            async function updateBotCommentIfPresent(marker, commentBody) {
               const existing = await findBotComment(marker);
               if (!existing) {
                 return;
@@ -140,37 +183,11 @@ jobs:
                 owner,
                 repo,
                 comment_id: existing.id,
-                body: `${marker}\n${body}`
+                body: marker + '\n' + commentBody
               });
             }
 
-            function checkedBox(text, label) {
-              const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              return new RegExp(`(^|\\n)\\s*-\\s*\\[[xX]\\]\\s*${escaped}\\b`).test(text);
-            }
-
-            function hasGenerationEvidence(text) {
-              return /!\[[^\]]*\]\([^)]+\)|https?:\/\/\S*(github\.com\/user-attachments\/assets\/|githubusercontent\.com\/|\.png|\.jpe?g|\.gif|\.webp|\.mp4|\.mov|\.webm|loom\.com\/share\/|youtube\.com\/watch|youtu\.be\/)/i.test(text);
-            }
-
-            function classifyContribution(text, changedFiles) {
-              const checkedAgent = checkedBox(text, 'Agent Benchmark');
-              const checkedGeneration = checkedBox(text, 'Generation UI');
-              const generationOnly = changedFiles.length > 0 && changedFiles.every((name) => generationAllowedFiles.has(name));
-              const touchesGeneration = changedFiles.some((name) => (
-                generationAllowedFiles.has(name) ||
-                name === 'imagent-ui/app/generation/page.tsx'
-              ));
-              if (checkedAgent && checkedGeneration) {
-                return { mode: 'invalid', reason: 'Select only one contribution type: `Agent Benchmark` or `Generation UI`.' };
-              }
-              if (checkedGeneration || (!checkedAgent && (generationOnly || touchesGeneration))) {
-                return { mode: 'generation-ui', reason: '' };
-              }
-              return { mode: 'agent', reason: '' };
-            }
-
-            async function olderDuplicateFor(mode) {
+            async function olderLeaderboardDuplicate() {
               const openPulls = await github.paginate(github.rest.pulls.list, {
                 owner,
                 repo,
@@ -185,7 +202,8 @@ jobs:
                   const createdAt = new Date(item.created_at).getTime();
                   return createdAt < currentCreatedAt || (createdAt === currentCreatedAt && item.number < pull_number);
                 })
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                .sort((left, right) => new Date(left.created_at) - new Date(right.created_at));
+
               for (const item of candidates) {
                 const otherFiles = await github.paginate(github.rest.pulls.listFiles, {
                   owner,
@@ -193,167 +211,138 @@ jobs:
                   pull_number: item.number,
                   per_page: 100
                 });
-                const otherClassification = classifyContribution(
-                  item.body || '',
-                  otherFiles.map((file) => file.filename)
-                );
-                if (otherClassification.mode === mode) {
+                if (isLeaderboardSubmission(item.body || '', otherFiles.map((file) => file.filename))) {
                   return item;
                 }
               }
               return null;
             }
 
+            const managedLabels = [
+              labels.leaderboard.name,
+              labels.leaderboardPass.name,
+              labels.needsEvidence.name,
+              labels.invalid.name,
+              labels.duplicate.name,
+              ...legacyLabels
+            ];
+
             if (isMaintainerPr) {
-              await removeLabels([
-                labels.pass.name,
-                labels.generation.name,
-                labels.generationPass.name,
-                labels.needsEvidence.name,
-                labels.invalid.name,
-                labels.duplicate.name,
-                labels.needsRebase.name
-              ]);
+              await removeLabels(managedLabels);
               return;
             }
 
-            const classification = classifyContribution(body, filenames);
+            const classification = classifyContribution(body);
             const failures = [];
 
             if (!titlePattern.test(pr.title || '')) {
-              failures.push('PR title must use a conventional prefix, for example `style: refine generation preview` or `feat: improve image planner`.');
+              failures.push('PR title must use a conventional prefix, for example style: refine leaderboard filters.');
             }
             if (classification.mode === 'invalid') {
               failures.push(classification.reason);
             }
 
-            if (classification.mode === 'generation-ui') {
-              for (const section of generationRequiredSections) {
+            if (classification.mode === 'leaderboard-ui') {
+              for (const section of requiredSections) {
                 if (!body.includes(section)) {
-                  failures.push(`Generation UI PR body must include \`${section}\`.`);
+                  failures.push('Leaderboard UI PR body must include ' + section + '.');
                 }
               }
-              const extraFiles = filenames.filter((name) => !generationAllowedFiles.has(name));
               if (!filenames.length) {
-                failures.push('Generation UI PR must change at least one allowed Generation UI file.');
+                failures.push('Leaderboard UI PR must change at least one approved Leaderboard UI file.');
               }
+              const extraFiles = filenames.filter((name) => !isAllowedLeaderboardFile(name));
               if (extraFiles.length) {
                 failures.push(
-                  `Generation UI PRs may only touch the approved Generation page UI files; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
+                  'Leaderboard UI PRs may only touch the approved leaderboard UI surface; remove: '
+                  + extraFiles.map((name) => '"' + name + '"').join(', ')
                 );
               }
-            } else if (classification.mode === 'agent') {
-              for (const section of agentRequiredSections) {
-                if (!body.includes(section)) {
-                  failures.push(`Agent benchmark PR body must include \`${section}\`.`);
+              if (!failures.length) {
+                const olderDuplicate = await olderLeaderboardDuplicate();
+                if (olderDuplicate) {
+                  failures.push(
+                    'Only one open Leaderboard UI PR per contributor is allowed. Update #'
+                    + olderDuplicate.number
+                    + ' instead.'
+                  );
                 }
-              }
-              if (!isSameRepoPr) {
-                failures.push(
-                  'Agent benchmark submissions must be opened from a branch in this repository; fork PRs cannot be evaluated because the bot must use benchmark secrets and push promotion commits.'
-                );
-              }
-              if (!filenames.includes(agentPath)) {
-                failures.push(`Contributor benchmark PRs must change \`${agentPath}\`.`);
-              }
-              const extraFiles = filenames.filter((name) => name !== agentPath);
-              if (extraFiles.length) {
-                failures.push(
-                  `Contributor benchmark PRs may only change \`${agentPath}\`; remove: ${extraFiles.map((name) => `\`${name}\``).join(', ')}`
-                );
-              }
-            }
-
-            if (classification.mode !== 'invalid') {
-              const olderDuplicate = await olderDuplicateFor(classification.mode);
-              if (olderDuplicate) {
-                const trackName = classification.mode === 'generation-ui' ? 'Generation UI' : 'agent benchmark';
-                failures.push(`Only one open ${trackName} PR per contributor is allowed. Update #${olderDuplicate.number} instead.`);
               }
             }
 
             if (failures.length) {
-              await removeLabels([
-                labels.pass.name,
-                labels.generation.name,
-                labels.generationPass.name,
-                labels.needsRebase.name,
-                labels.needsEvidence.name
-              ]);
+              await removeLabels(managedLabels);
               const labelsToAdd = [labels.invalid.name];
-              if (classification.mode === 'generation-ui') {
-                labelsToAdd.push(labels.generation.name);
+              if (classification.mode === 'leaderboard-ui') {
+                labelsToAdd.push(labels.leaderboard.name);
               }
               if (failures.some((failure) => failure.startsWith('Only one open '))) {
                 labelsToAdd.push(labels.duplicate.name);
               }
-              await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: labelsToAdd });
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pull_number,
+                labels: labelsToAdd
+              });
               await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: pull_number,
                 body: [
-                  classification.mode === 'generation-ui'
-                    ? 'This Generation UI PR was closed because it does not match the contributor UI rules.'
-                    : 'This PR was closed before benchmark because it does not match the contributor agent rules.',
+                  'This PR was closed because the active competition accepts only scoped Leaderboard UI submissions.',
                   '',
-                  ...failures.map((failure) => `- ${failure}`),
+                  ...failures.map((failure) => '- ' + failure),
                   '',
-                  'Update the PR title/body/files, then reopen the PR.'
+                  'Update the PR title, description, and files, then reopen the PR.'
                 ].join('\n')
               });
-              await github.rest.pulls.update({ owner, repo, pull_number, state: 'closed' });
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number,
+                state: 'closed'
+              });
               return;
             }
 
             await removeLabels([
               labels.invalid.name,
               labels.duplicate.name,
-              labels.needsRebase.name
+              labels.needsEvidence.name,
+              ...legacyLabels
             ]);
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: pull_number,
+              labels: [labels.leaderboard.name, labels.leaderboardPass.name]
+            });
 
-            if (classification.mode === 'generation-ui') {
-              await removeLabel(labels.pass.name);
-              await github.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number: pull_number,
-                labels: [labels.generation.name, labels.generationPass.name]
-              });
-              if (hasGenerationEvidence(body)) {
-                await removeLabel(labels.needsEvidence.name);
-                await updateBotCommentIfPresent(
-                  evidenceCommentMarker,
-                  [
-                    'Evidence detected for this Generation UI PR.',
-                    '',
-                    '`needs-evidence` was removed. This PR is ready for manual UI review once CI passes.'
-                  ].join('\n')
-                );
-              } else {
-                await github.rest.issues.addLabels({
-                  owner,
-                  repo,
-                  issue_number: pull_number,
-                  labels: [labels.needsEvidence.name]
-                });
-                await upsertBotComment(
-                  evidenceCommentMarker,
-                  [
-                    'This Generation UI PR is still open, but it needs visual evidence before manual review.',
-                    '',
-                    'Please edit the PR description and add at least one screenshot or video link showing the changed Generation page.',
-                    'Accepted evidence includes GitHub image/video uploads, direct image/video links, Loom, or YouTube links.'
-                  ].join('\n')
-                );
-              }
+            if (hasVisualEvidence(body)) {
+              await updateBotCommentIfPresent(
+                evidenceCommentMarker,
+                [
+                  'Visual evidence detected for this Leaderboard UI PR.',
+                  '',
+                  'needs-evidence was removed. This PR is ready for manual UI review once CI passes.'
+                ].join('\n')
+              );
               return;
             }
 
-            await removeLabels([
-              labels.generation.name,
-              labels.generationPass.name,
-              labels.needsEvidence.name,
-              labels.pass.name
-            ]);
-            await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels: [labels.pass.name] });
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: pull_number,
+              labels: [labels.needsEvidence.name]
+            });
+            await upsertBotComment(
+              evidenceCommentMarker,
+              [
+                'This Leaderboard UI PR is still open, but it needs visual evidence before manual review.',
+                '',
+                'Please edit the PR description and add at least one screenshot or video link showing the updated Leaderboard page.',
+                'Accepted evidence includes GitHub image or video uploads, direct image or video links, Loom, or YouTube links.'
+              ].join('\n')
+            );

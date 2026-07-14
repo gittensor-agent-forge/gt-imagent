@@ -1,311 +1,179 @@
 # Imagent
 
-Imagent is an open competition and research repo for image-generation agents.
-The core idea is simple: image generation should not be only a one-shot prompt
-call. A strong image agent should understand intent, plan, use context, generate,
-critique, and improve its output while keeping the underlying image model as one
-component in a larger system.
+Imagent is an open research project for image-generation agents. Its core idea
+is simple: image generation should be more than a one-shot prompt call. A strong
+agent should understand intent, plan, use context, generate, critique, and
+improve while the image model remains one component in a larger system.
 
-This repository owns the candidate agent template and the automated round
-workflow. Contributors compete by improving one file, `agent/agent.py`. Twice per
-day, the benchmark evaluates valid candidate PRs, promotes the highest-scoring
-threshold-passing agent, and archives the winner for everyone to study.
+## Current Status
+
+The active GitHub competition is Leaderboard UI. Contributors improve the public
+Leaderboard experience through focused, visual, manually reviewed pull requests.
+
+Agent Benchmark and Generation UI competitions are paused. The agent reference
+implementation, winner archive, benchmark reports, and local benchmark tooling
+remain available for research and historical reference, but no scheduled agent
+benchmark workflow runs in GitHub Actions.
 
 ## Why This Exists
 
-Modern image models are powerful, but prompt-to-image generation still fails
-often on multi-step instructions, exact text, context-heavy tasks, consistency,
-and self-correction. Imagent treats those weaknesses as an agent-design problem.
+Modern image models are powerful, but prompt-to-image generation still struggles
+with complex instructions, context-heavy requests, consistency, exact text, and
+self-correction. Imagent treats those weaknesses as an agent-design problem.
 
-Instead of asking contributors to change the underlying model, Imagent asks a
-more useful research question:
+The long-term research question remains:
 
 Can better planning, orchestration, context use, and verification make the same
 image model produce better results?
 
-The long-term goal is to become an open platform for building and comparing
-image-generation agents: modular planners, prompt builders, tool users,
-self-critics, regeneration policies, memory systems, benchmark suites, and
-trajectory-level evaluators.
+The project is designed to support modular planners, prompt builders, tool
+users, self-critics, regeneration policies, memory systems, benchmark suites,
+and trajectory-level evaluation.
 
 ## Built Through Gittensor
 
-Imagent is being built through Gittensor. Gittensor helps power the open
-competition loop behind this project: contributors submit image-agent code,
-automated benchmark rounds evaluate the work, and the best implementations are
-merged, archived, and made visible for everyone to study.
+Imagent is being built through Gittensor. Gittensor supports the open
+contributor market that this project is building toward: code, benchmark
+history, and design work remain public, reviewable, and reusable.
 
-You do not need to be in Discord or understand subnet internals to see how
-Gittensor is involved. The relationship is explicit:
+You do not need Discord access or subnet-specific knowledge to understand the
+relationship:
 
-- Gittensor supports the open contributor market that Imagent is building
-  toward.
-- Imagent turns image-agent research into benchmarked GitHub PRs.
-- Winning code is promoted into `agent/last_winner.py` and archived under
-  `winners/`.
-- Contributors can inspect prior winners, improve the base agent, and compete
-  in future benchmark rounds.
-
-The current GitHub round system is the first practical version of a
-Gittensor-style open intelligence market: contributors submit agents, objective
-evaluation assigns scores, and the best work becomes visible, reusable, and
-rewardable.
-
-In the future, Imagent can evolve toward deeper Gittensor integration where:
-
-- Miners or contributors submit image-agent strategies.
-- Validators evaluate agents against public and private benchmark suites.
-- Scores reflect measurable improvement over the current best agent.
-- Winning trajectories and code are archived for transparent research.
-- Rewards can favor real capability gains instead of benchmark overfitting.
-
-The immediate repository workflow is intentionally strict and simple so this can
-become a reliable foundation for that larger ecosystem.
+- Gittensor supports the open software market behind the project.
+- Imagent exposes image-agent research, benchmark reports, and winner history
+  in GitHub and on the public site.
+- The active Leaderboard UI competition helps people understand that work and
+  contribute through focused pull requests.
+- Historical agent winners remain visible in agent/last_winner.py and winners/.
 
 ## Repository Layout
 
-- `agent/agent.py`: the basic reference agent and the only file contributor
-  benchmark PRs may change.
-- `agent/last_winner.py`: bot-managed copy of the latest winning agent. It starts
-  empty and is updated only by the round bot.
-- `imagent_runtime/`: stable runtime and CLI infrastructure used to execute
-  agents locally and in framework flows. Contributor benchmark PRs should not
-  edit this package.
-- `imagent-ui/`: product website and Generation page UI. Generation UI
-  contributor PRs are reviewed manually and are not benchmarked or auto-merged.
-- `winners/`: bot-managed archive of previous winning agents, intended as a
-  public reference library for contributors.
-- `.github/workflows/pr-rules.yml`: validates contributor PRs and closes invalid
-  agent and Generation UI submissions before review or benchmark spend.
-- `.github/workflows/benchmark.yml`: runs two scheduled benchmark rounds per day.
-- `.github/scripts/round_manager.py`: evaluates PRs, enforces thresholds,
-  selects the round winner, promotes winner code, labels non-winners, and merges.
+- agent/agent.py: basic reference image agent. Contributor benchmark submissions
+  are currently paused.
+- agent/last_winner.py: latest reference from the prior agent-round system.
+- imagent_runtime/: stable runtime and CLI infrastructure for local agents.
+- imagent-ui/: product website. The active contributor surface is the Leaderboard
+  page UI.
+- winners/: public archive of previous winning agent implementations.
+- .github/workflows/pr-rules.yml: validates the active Leaderboard UI
+  contribution track.
+- .github/scripts/round_manager.py: retained transparent reference tooling for
+  the paused agent-round system.
 
-Benchmark suites, scoring, and evaluation logic live in
-[`imagent-bench`](https://github.com/imagent-ai/imagent-bench). This repo stays
-focused on the candidate agent and promotion workflow.
+Benchmark suites and scoring logic live in
+[imagent-bench](https://github.com/imagent-ai/imagent-bench).
 
-## Contributor Workflow
+## Active Competition: Leaderboard UI
 
-Imagent currently supports two contributor tracks:
+Leaderboard UI submissions are manually reviewed. They are not benchmarked and
+are never auto-merged.
 
-- `Agent Benchmark`: code submissions that compete in scheduled benchmark rounds.
-- `Generation UI`: design and frontend submissions for the Generation page.
+The completed Home page is the visual standard. A submission should preserve the
+dark product language, intentional motion, readable hierarchy, responsive
+behavior, and spacing discipline while improving the Leaderboard page.
 
-Select exactly one track in the pull request template.
+Contributors may change only:
 
-### Agent Benchmark PRs
+- imagent-ui/app/leaderboard/page.tsx
+- imagent-ui/app/components/LeaderboardBoard.tsx
+- Leaderboard-local .tsx and .css files under imagent-ui/app/leaderboard/
+- Leaderboard-local .tsx and .css files under
+  imagent-ui/app/leaderboard/components/
+- imagent-ui/app/styles.css, limited to Leaderboard selectors
 
-Contributor benchmark PRs are intentionally constrained:
+Every contributor submission must:
 
-- Change only `agent/agent.py`.
-- Do not edit tests, workflows, dependency metadata, `agent/last_winner.py`, or
-  `winners/`.
-- Open only one PR at a time.
-- Use the PR template and explain the expected benchmark impact.
-- Rebase when the bot applies `needs-rebase`.
+1. Select Leaderboard UI in the pull request template.
+2. Use a conventional commit-style title, such as style: refine leaderboard
+   filters.
+3. Complete Summary, Motivation, Changes, and Testing in the PR description.
+4. Include at least one screenshot or video link showing the updated Leaderboard.
+5. Change only the approved UI surface.
+6. Keep one focused concern, one atomic commit, and one open Leaderboard UI PR
+   per contributor.
 
-This constraint keeps the competition fair. Every candidate is evaluated as an
-agent implementation, not as a test change, dependency change, workflow change,
-or benchmark change.
+The PR rules workflow immediately closes an out-of-scope or duplicate
+submission. A scoped PR without visual evidence stays open and receives the
+needs-evidence label and an automated comment.
 
-### Generation UI PRs
+Valid submissions receive leaderboard-ui and leaderboard-ui-pass. Maintainers
+compare them and merge the strongest coherent design manually. Valid
+non-winning submissions are not closed automatically and can be improved for a
+later review.
 
-Generation UI PRs are constrained differently:
+## Paused Tracks
 
-- Touch only approved Generation page UI files under `imagent-ui/`.
-- Follow the completed Home page as the visual standard.
-- Open only one Generation UI PR at a time.
-- Keep the PR focused and small enough for manual review.
-- Include at least one screenshot or video link in the PR description.
-- Do not edit API routes, runtime code, benchmark files, agent files,
-  dependency metadata, deployment config, or unrelated pages.
+Agent Benchmark and Generation UI are not active contributor tracks. A
+contributor PR that changes agent/agent.py, the Generation page, benchmark
+configuration, API routes, runtime code, deployment configuration, or another
+unapproved surface is labeled invalid-pr and closed.
 
-The PR rules bot closes Generation UI PRs that touch files outside the approved
-Generation page UI surface. If visual evidence is missing, the bot keeps the PR
-open, adds `needs-evidence`, and leaves a comment asking for a screenshot or
-video.
-
-Generation UI PRs receive `generation-ui` and `generation-ui-pass` labels when
-their file scope is valid. They do not receive `pr-rules-pass`, so the scheduled
-agent benchmark workflow will not evaluate or auto-merge them. Maintainers
-review and merge UI PRs manually.
-
-Owner and maintainer PRs are excluded from the round workflow. They are used for
-manual repository maintenance, documentation, infrastructure, benchmark pins, and
-base-template changes.
-
-## Round System
-
-Rounds run twice per day in UTC:
-
-- `00:00 UTC`
-- `12:00 UTC`
-
-Each round follows this lifecycle:
-
-1. Collect open same-repository contributor PRs labeled `pr-rules-pass`.
-2. Skip maintainer PRs, draft PRs, fork PRs, and PRs labeled `needs-rebase`.
-3. Enforce one open candidate PR per contributor.
-4. Evaluate each valid PR in an isolated temporary git worktree and virtualenv.
-5. Close PRs that fail tests, compilation, benchmark quality policy, or the
-   configured improvement threshold.
-6. Mark threshold-passing PRs as `round-eligible`.
-7. Select the highest-scoring eligible PR as the round winner.
-8. Copy the winning `agent/agent.py` into `agent/last_winner.py`.
-9. Archive the same code under `winners/<round>_pr_<number>_<sha>.py`.
-10. Restore the base template so `agent/agent.py` remains a clean starting point.
-11. Squash-merge the promoted winner PR.
-12. Label non-winning eligible PRs as `needs-rebase` so contributors update them
-    before the next round.
-
-The round threshold is controlled by the repository variable
-`IMAGENT_ROUND_THRESHOLD`. A candidate must improve by more than that threshold
-to stay eligible.
-
-## Bot-Managed Winner Files
-
-`agent/last_winner.py` and `winners/` are not submission targets. They are public
-reference material.
-
-Use them to understand what has worked before:
-
-- Read `agent/last_winner.py` to see the current best merged strategy.
-- Browse `winners/` to study earlier winning approaches.
-- Copy ideas into your own `agent/agent.py` implementation.
-- Do not edit winner files directly in contributor PRs.
-
-When your PR wins, the bot will update those files for you.
+Existing legacy PRs are not closed retroactively by this policy. Maintainers can
+review or close them deliberately.
 
 ## Local Development
 
-Install the package and run tests:
+Install the root package and run the test suite:
 
-```bash
+~~~bash
 python -m pip install -e ".[dev]"
 python -m pytest
-```
+~~~
 
-Run a quick local demo with the CLI:
+Install and validate the product website:
 
-```bash
-export OPENROUTER_API_KEY=<your-openrouter-api-key>
+~~~bash
+cd imagent-ui
+npm ci
+npm run lint
+npm run build
+~~~
 
-imagent "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify."
-```
+## Local Agent Use
 
-The CLI defaults to `agent.agent:ImageAgent`, so contributors can test the
-reference agent or their own local edits to `agent/agent.py`. To run another
-agent class, pass `--agent module.path:ClassName`. The same CLI can also be run
-without installing the console script:
+Live generation uses OpenRouter and the project-standard Gemini 3.1 Flash Image
+model. Set OPENROUTER_API_KEY before running the CLI:
 
-```bash
-python -m imagent_runtime \
-  "Create a polished benchmark badge titled CLI PASS."
-```
+~~~bash
+export OPENROUTER_API_KEY=your-openrouter-api-key
+imagent "Create a polished benchmark badge titled CLI PASS."
+~~~
 
-Each CLI run creates `results/<UTC datetime>/` automatically if it does not
-exist. The generated image and trace are saved under:
+Each run creates results/<UTC datetime>/ if needed and stores an image and JSON
+trace there. The reference agent fails clearly when OpenRouter is not configured;
+it does not fall back to a mock renderer.
 
-- `results/<UTC datetime>/images/<UTC datetime>.<ext>`
-- `results/<UTC datetime>/traces/<UTC datetime>.json`
+## Local Benchmark Research
 
-Pass `--run-id` and `--output-dir` only when you need custom artifact names or a
-custom results location. The older `--prompt "..."` flag remains supported, but
-the preferred format is `imagent "..."`.
+The benchmark remains useful for local research even though scheduled repository
+rounds are paused:
 
-Run the same flow from Python:
-
-```python
-import os
-from pathlib import Path
-
-from agent.agent import ImageAgent
-
-os.environ["OPENROUTER_API_KEY"] = "<your-openrouter-api-key>"
-
-agent = ImageAgent()
-agent.setup({}, Path("."))
-
-result = agent.generate(
-    {
-        "run_id": "demo-card",
-        "capability": "plan",
-        "prompt": "Create a three-panel infographic titled Context Gap Toolkit with sections Plan, Ground, Verify.",
-        "seed": 1001,
-        "allowed_tools": ["plan"],
-    },
-    Path("results/demo"),
-)
-
-print(result)
-```
-
-The base agent calls OpenRouter's dedicated Image API with
-`google/gemini-3.1-flash-image`, saves the generated image, and writes a JSON
-trace. If `OPENROUTER_API_KEY` is not configured, generation fails clearly
-instead of falling back to any local mock renderer.
-
-`BaseImageAgent` in `agent/agent.py` is the contributor-facing reference
-strategy. `AgentRuntime` lives outside the contributor surface in
-`imagent_runtime/agent_runtime.py` and executes the trajectory: prepare
-artifacts, collect context, construct the prompt, call OpenRouter, persist the
-image, and write the trace.
-
-## Local Benchmark
-
-From sibling checkouts of `imagent` and `imagent-bench`:
-
-```bash
+~~~bash
 python -m pip install -e ../imagent-bench
 imagent-bench run \
   --repository . \
   --config ../imagent-bench/configs/official.json \
   --output-dir benchmark-output \
   --fail-on-policy
-```
+~~~
 
-For the OpenRouter vision benchmark used by scheduled rounds:
-
-```bash
-export OPENROUTER_API_KEY=<your-openrouter-api-key>
-export IMAGENT_BASELINE_SCORE=<current-winner-score>
-
-imagent-bench run \
-  --repository . \
-  --config ../imagent-bench/configs/openrouter-vision-benchmark.json \
-  --baseline-score "$IMAGENT_BASELINE_SCORE" \
-  --output-dir benchmark-output-openrouter-vision
-```
+For local OpenRouter vision research, use the OpenRouter benchmark configuration
+from the sibling imagent-bench checkout.
 
 ## Labels
 
-- `pr-rules-pass`: agent benchmark PR passed the submission gate and may enter
-  scheduled benchmark rounds.
-- `generation-ui`: contributor PR targets the Generation page UI track.
-- `generation-ui-pass`: Generation UI PR passed the automated file-scope gate
-  and is ready for manual review.
-- `needs-evidence`: Generation UI PR is missing a screenshot or video in the PR
-  description.
-- `invalid-pr`: PR was closed because it violated the relevant contributor
-  rules.
-- `duplicate-pr`: contributor opened more than one active PR in the same track.
-- `round-benchmark-running`: candidate is currently being evaluated.
-- `round-eligible`: candidate exceeded the threshold this round.
-- `round-winner`: candidate won the round and was selected for promotion.
-- `below-threshold`: candidate did not improve enough and was closed.
-- `benchmark-fail`: candidate failed tests, compilation, benchmark execution, or
-  benchmark quality policy.
-- `needs-rebase`: candidate stayed open after another PR won and must be rebased
-  before entering another round.
+- leaderboard-ui: contributor PR selected the active Leaderboard UI track.
+- leaderboard-ui-pass: PR passed the title, template, and file-scope gate.
+- needs-evidence: valid Leaderboard UI PR is missing a screenshot or video.
+- invalid-pr: PR was closed because it violates the active contributor policy.
+- duplicate-pr: contributor opened more than one active Leaderboard UI PR.
 
 ## Design Principles
 
 - Keep the base agent easy to understand.
-- Make competition rules explicit and enforceable.
-- Benchmark in isolated environments.
-- Promote only measurable improvements.
-- Preserve every winning implementation.
+- Make contribution rules explicit and enforceable.
+- Preserve benchmark history and every prior winner.
+- Keep active UI contributions isolated from runtime and benchmark behavior.
+- Require visual evidence before manual design review.
 - Prefer transparent research artifacts over hidden leaderboard tricks.
-- Build toward open, Gittensor-compatible agent markets without compromising the
-  simple GitHub workflow that works today.
+- Build toward open, Gittensor-compatible image-agent research.

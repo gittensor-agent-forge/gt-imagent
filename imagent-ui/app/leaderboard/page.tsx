@@ -7,13 +7,13 @@ import { type LeaderboardEntry, listLeaderboardEntries } from "@/lib/reports";
 
 export const metadata: Metadata = {
   title: "Leaderboard | Imagent",
-  description: "Live Imagent benchmark leaderboard for Gittensor-powered image-agent PR rounds.",
+  description: "Imagent benchmark archive for Gittensor-powered image-agent research.",
   alternates: {
     canonical: "/leaderboard"
   },
   openGraph: {
     title: "Leaderboard | Imagent",
-    description: "Live Imagent benchmark leaderboard for Gittensor-powered image-agent PR rounds.",
+    description: "Imagent benchmark archive for Gittensor-powered image-agent research.",
     url: "/leaderboard"
   }
 };
@@ -53,8 +53,8 @@ export default async function LeaderboardPage() {
     <div className="leaderboard-page">
       <section className="leaderboard-hero">
         <div className="leaderboard-hero-copy">
-          <span className="page-kicker">Powered by Gittensor · subnet 74 · official eval</span>
-          <h1>Image miners compete on live benchmark improvement.</h1>
+          <span className="page-kicker">Powered by Gittensor · subnet 74 · benchmark archive</span>
+          <h1>Inspect Image-Agent Benchmark History</h1>
           <p>
             Every report is ranked by score, PR outcome, baseline delta, latency, cost, and judge dimensions.
             {" "}Generation is fixed to {IMAGENT_GENERATION_MODEL_NAME} through OpenRouter.
@@ -95,7 +95,7 @@ export default async function LeaderboardPage() {
 
       <section className="improvement-board" aria-label="Project improvement summary">
         <div className="improvement-board-copy">
-          <span className="live-chip"><Activity size={13} /> Live benchmark feed</span>
+          <span className="live-chip"><Activity size={13} /> Benchmark Archive</span>
           <h2>{formatDelta(projectDelta)} project improvement</h2>
           <p>
             Compared against {projectBaseline === null ? "the recorded baseline once benchmark ranking metadata is available" : `baseline ${projectBaseline.toFixed(2)}`}.
