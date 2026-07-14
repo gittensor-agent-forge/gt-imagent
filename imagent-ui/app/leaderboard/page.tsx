@@ -5,18 +5,16 @@ import { listLeaderboardEntries } from "@/lib/reports";
 
 export const metadata: Metadata = {
   title: "Leaderboard | Imagent",
-  description: "Live Imagent PR benchmark state with the current king, active candidates, and evaluated PR history.",
+  description: "Imagent benchmark history, resolved pull request state, and the current benchmark king.",
   alternates: {
     canonical: "/leaderboard"
   },
   openGraph: {
     title: "Leaderboard | Imagent",
-    description: "Live Imagent PR benchmark state with the current king, active candidates, and evaluated PR history.",
+    description: "Imagent benchmark history, resolved pull request state, and the current benchmark king.",
     url: "/leaderboard"
   }
 };
-
-export const dynamic = "force-dynamic";
 
 export default async function LeaderboardPage() {
   const entries = await listLeaderboardEntries();

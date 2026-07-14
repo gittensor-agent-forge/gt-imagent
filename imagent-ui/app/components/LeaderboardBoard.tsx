@@ -3,11 +3,9 @@
 import {
   Activity,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleDot,
   Crown,
   Eye,
   GitMerge,
@@ -15,11 +13,9 @@ import {
   GitPullRequestArrow,
   History,
   Hourglass,
-  Loader2,
   List,
   Minus,
   MoreHorizontal,
-  RefreshCw,
   Search,
   Timer,
   TrendingDown,
@@ -28,236 +24,47 @@ import {
   X,
   XCircle
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LeaderboardEntry } from "@/lib/reports";
 
-type CandidateStage = "submitted" | "queued" | "benchmarking" | "judging" | "policy";
-type CandidateEntry = {
-  id: string;
-  contributor: LeaderboardEntry["contributor"];
-  progress: number;
-  pullRequest: LeaderboardEntry["pullRequest"];
-  repository: string;
-  stage: CandidateStage;
-  submittedAt: string;
+type HistoryFilter = "all" | "merged" | "closed" | "eligible" | "failed";
+type PullRequestStatus = {
+  icon: ReactNode;
+  label: string;
+  tone: "merged" | "closed" | "unknown";
 };
-type MockCandidateSeed = {
-  login: string;
-  name: string;
-  number: number;
-  progress: number;
-  stage: CandidateStage;
-  submittedAgoMs: number;
-  title: string;
+type BenchmarkStatus = {
+  label: string;
+  tone: "passed" | "failed";
 };
-type HistoryFilter = "all" | "merged" | "closed" | "requirements" | "violation";
-type RefreshStatus = "live" | "updating" | "stale";
+type EligibilityStatus = {
+  label: string;
+  tone: "eligible" | "ineligible";
+};
 
-const POLL_INTERVAL_MS = 8000;
 const HISTORY_PAGE_SIZES = [4, 8, 12] as const;
 
 const historyFilters: Array<{ id: HistoryFilter; label: string }> = [
   { id: "all", label: "All" },
   { id: "merged", label: "Merged" },
   { id: "closed", label: "Closed" },
-  { id: "requirements", label: "Requirements met" },
-  { id: "violation", label: "Rule violation" }
+  { id: "eligible", label: "Eligible" },
+  { id: "failed", label: "Benchmark failed" }
 ];
-
-const pipelineStages: Array<{ id: CandidateStage; label: string }> = [
-  { id: "submitted", label: "Submitted" },
-  { id: "queued", label: "Queued" },
-  { id: "benchmarking", label: "Benchmarking" },
-  { id: "judging", label: "Judging" },
-  { id: "policy", label: "Policy" }
-];
-
-// UI-only candidates keep the active evaluation states visible until the benchmark API exposes them.
-const mockCandidateSeeds: MockCandidateSeed[] = [
-  {
-    login: "sindresorhus",
-    name: "Sindre Sorhus",
-    number: 71,
-    progress: 68,
-    stage: "benchmarking",
-    submittedAgoMs: 8 * 60 * 1000,
-    title: "feat: retain subject fidelity across image refinements"
-  },
-  {
-    login: "antfu",
-    name: "Anthony Fu",
-    number: 72,
-    progress: 24,
-    stage: "queued",
-    submittedAgoMs: 3 * 60 * 1000,
-    title: "fix: stabilize composition feedback for dense prompts"
-  },
-  {
-    login: "shadcn",
-    name: "shadcn",
-    number: 73,
-    progress: 86,
-    stage: "judging",
-    submittedAgoMs: 14 * 60 * 1000,
-    title: "feat: improve style consistency for editorial image prompts"
-  },
-  {
-    login: "leerob",
-    name: "Lee Robinson",
-    number: 74,
-    progress: 96,
-    stage: "policy",
-    submittedAgoMs: 17 * 60 * 1000,
-    title: "fix: add safer typography handling for generated posters"
-  },
-  {
-    login: "addyosmani",
-    name: "Addy Osmani",
-    number: 75,
-    progress: 7,
-    stage: "submitted",
-    submittedAgoMs: 1 * 60 * 1000,
-    title: "feat: preserve product proportions during visual revisions"
-  },
-  {
-    login: "kentcdodds",
-    name: "Kent C. Dodds",
-    number: 76,
-    progress: 54,
-    stage: "benchmarking",
-    submittedAgoMs: 22 * 60 * 1000,
-    title: "feat: strengthen composition planning for campaign assets"
-  },
-  {
-    login: "t3-oss",
-    name: "Theo Browne",
-    number: 77,
-    progress: 31,
-    stage: "queued",
-    submittedAgoMs: 5 * 60 * 1000,
-    title: "fix: normalize color intent in iterative generation flows"
-  },
-  {
-    login: "vercel",
-    name: "Vercel",
-    number: 78,
-    progress: 79,
-    stage: "judging",
-    submittedAgoMs: 26 * 60 * 1000,
-    title: "feat: improve hero subject separation in benchmark scenes"
-  },
-  {
-    login: "microsoft",
-    name: "Microsoft",
-    number: 79,
-    progress: 12,
-    stage: "submitted",
-    submittedAgoMs: 2 * 60 * 1000,
-    title: "feat: add structured feedback for image composition retries"
-  },
-  {
-    login: "openai",
-    name: "OpenAI",
-    number: 80,
-    progress: 92,
-    stage: "policy",
-    submittedAgoMs: 31 * 60 * 1000,
-    title: "fix: tighten policy checks for product-label generation"
-  },
-  {
-    login: "github",
-    name: "GitHub",
-    number: 81,
-    progress: 61,
-    stage: "benchmarking",
-    submittedAgoMs: 35 * 60 * 1000,
-    title: "feat: retain material details in close-up product imagery"
-  },
-  {
-    login: "octocat",
-    name: "The Octocat",
-    number: 82,
-    progress: 39,
-    stage: "queued",
-    submittedAgoMs: 10 * 60 * 1000,
-    title: "fix: balance background density for branded visual prompts"
-  }
-];
-
-function listMockCandidates(now = new Date()): CandidateEntry[] {
-  return mockCandidateSeeds.map((candidate) => ({
-    id: `ui-candidate-${candidate.number}`,
-    contributor: {
-      avatar_url: `https://github.com/${candidate.login}.png?size=96`,
-      html_url: `https://github.com/${candidate.login}`,
-      login: candidate.login,
-      name: candidate.name,
-      source: "derived"
-    },
-    progress: candidate.progress,
-    pullRequest: {
-      closed_at: null,
-      html_url: null,
-      merged_at: null,
-      number: candidate.number,
-      source: "derived",
-      state: "open",
-      title: candidate.title
-    },
-    repository: "gittensor-agent-forge/gt-imagent",
-    stage: candidate.stage,
-    submittedAt: new Date(now.getTime() - candidate.submittedAgoMs).toISOString()
-  }));
-}
 
 export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
-  const router = useRouter();
-  const [candidates, setCandidates] = useState(() => listMockCandidates());
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState<number>(HISTORY_PAGE_SIZES[0]);
   const [query, setQuery] = useState("");
   const [selectedEntry, setSelectedEntry] = useState<LeaderboardEntry | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>("live");
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(() => new Date().toISOString());
-  const [lastRefreshAt, setLastRefreshAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  const refreshInFlightRef = useRef(false);
-  const refreshTimerRef = useRef<number | null>(null);
   const modalTriggerRef = useRef<HTMLElement | null>(null);
-
-  const refreshLeaderboard = useCallback(() => {
-    if (refreshInFlightRef.current) {
-      return;
-    }
-
-    refreshInFlightRef.current = true;
-    setRefreshStatus("updating");
-
-    router.refresh();
-    refreshTimerRef.current = window.setTimeout(() => {
-      const refreshedAt = Date.now();
-      setCandidates(listMockCandidates(new Date(refreshedAt)));
-      setLastUpdatedAt(new Date(refreshedAt).toISOString());
-      setLastRefreshAt(refreshedAt);
-      setNow(refreshedAt);
-      setRefreshStatus("live");
-      refreshInFlightRef.current = false;
-      refreshTimerRef.current = null;
-    }, 220);
-  }, [router]);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
-
-  useEffect(() => () => {
-    if (refreshTimerRef.current !== null) {
-      window.clearTimeout(refreshTimerRef.current);
-    }
   }, []);
 
   useEffect(() => {
@@ -270,41 +77,10 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
     };
   }, []);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (!document.hidden) {
-        refreshLeaderboard();
-      }
-    }, POLL_INTERVAL_MS);
-
-    function handleVisibilityChange() {
-      if (!document.hidden) {
-        refreshLeaderboard();
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [refreshLeaderboard]);
-
-  useEffect(() => {
-    if (refreshStatus === "updating") {
-      return;
-    }
-
-    const stale = now - lastRefreshAt > POLL_INTERVAL_MS * 3;
-    if (stale) {
-      setRefreshStatus("stale");
-    }
-  }, [lastRefreshAt, now, refreshStatus]);
-
   const king = useMemo(() => getCurrentKing(entries), [entries]);
   const filteredHistoryEntries = useMemo(
-    () => buildHistory(entries, historyFilter, query, king),
-    [entries, historyFilter, query, king]
+    () => buildHistory(entries, historyFilter, query),
+    [entries, historyFilter, query]
   );
   const historyPageCount = Math.max(1, Math.ceil(filteredHistoryEntries.length / historyPageSize));
   const activeHistoryPage = Math.min(historyPage, historyPageCount);
@@ -322,24 +98,17 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
 
   return (
     <>
-      <section className="leaderboard-live-shell leaderboard-state-shell" aria-label="Live PR benchmark">
-        <h1 className="leaderboard-page-title">Live PR Benchmark</h1>
+      <section className="leaderboard-live-shell leaderboard-state-shell" aria-label="PR benchmark history">
+        <h1 className="leaderboard-page-title">PR Benchmark History</h1>
 
         <div className="leaderboard-state-priority">
-          <CandidateQueue
-            candidates={candidates}
-            lastUpdatedAt={lastUpdatedAt}
-            now={now}
-            onRefresh={refreshLeaderboard}
-            refreshStatus={refreshStatus}
-          />
+          <CandidateQueue />
           <KingCard entry={king} onOpenDetails={openEntryDetails} />
         </div>
 
         <HistoryPanel
           entries={historyEntries}
           filter={historyFilter}
-          king={king}
           now={now}
           onFilterChange={(nextFilter) => {
             setHistoryFilter(nextFilter);
@@ -365,7 +134,6 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
       {mounted && selectedEntry ? (
         <PrDetailModal
           entry={selectedEntry}
-          king={king}
           now={now}
           onClose={closeEntryDetails}
           trigger={modalTriggerRef.current}
@@ -396,14 +164,18 @@ function KingCard({
     );
   }
 
+  const prState = pullRequestStatus(entry);
+  const benchmark = benchmarkStatus(entry);
+  const eligibility = eligibilityStatus(entry);
+
   return (
     <section className="leaderboard-king-panel" aria-label="Current benchmark king">
       <div className="leaderboard-king-head">
         <span className="leaderboard-king-title"><Crown size={15} />King</span>
         <div className="leaderboard-king-head-actions">
-          <span className="leaderboard-king-state">
-            <CheckCircle2 size={13} />
-            {entry.pullRequest.state === "merged" ? "Merged" : entry.improvement.mergeEligible ? "Eligible" : "Evaluated"}
+          <span className={`leaderboard-king-state ${prState.tone}`}>
+            {prState.icon}
+            {prState.label}
           </span>
           <button
             aria-label="View current king details"
@@ -425,6 +197,8 @@ function KingCard({
             <p className="leaderboard-king-pr-title" title={entry.pullRequest.title}>{entry.pullRequest.title}</p>
             <div className="leaderboard-king-meta">
               <span>@{entry.contributor.login}</span>
+              <span className={`leaderboard-king-meta-label ${benchmark.tone}`}>{benchmark.label}</span>
+              <span className={`leaderboard-king-meta-label ${eligibility.tone}`}>{eligibility.label}</span>
             </div>
           </div>
         </div>
@@ -473,125 +247,31 @@ function KingCard({
   );
 }
 
-function CandidateQueue({
-  candidates,
-  lastUpdatedAt,
-  onRefresh,
-  refreshStatus,
-  now
-}: {
-  candidates: CandidateEntry[];
-  lastUpdatedAt: string;
-  onRefresh: () => void;
-  refreshStatus: RefreshStatus;
-  now: number;
-}) {
+function CandidateQueue() {
   return (
     <section className="leaderboard-candidate-region" aria-label="Candidate PR queue">
       <section className="leaderboard-candidate-panel">
         <div className="leaderboard-candidate-head">
-          <PanelHeader inlineValue icon={<GitPullRequestArrow size={15} />} title="Candidate Queue" value={String(candidates.length)} />
-          <div className="leaderboard-candidate-actions">
-            <span
-              className={`leaderboard-candidate-live ${refreshStatus}`}
-              title={`Last updated ${formatRelativeTime(lastUpdatedAt, now)}`}
-            >
-              {refreshStatus === "updating" ? <Loader2 className="spin" size={13} /> : <CircleDot size={13} />}
-              {statusLabel(refreshStatus)}
-            </span>
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshStatus === "updating"}
-              aria-label="Refresh candidate queue"
-              title="Refresh candidate queue"
-            >
-              <RefreshCw size={15} />
-            </button>
-          </div>
+          <PanelHeader inlineValue icon={<GitPullRequestArrow size={15} />} title="Candidate Queue" value="Paused" />
         </div>
 
-        {candidates.length ? (
-          <>
-            <div className="leaderboard-candidate-columns" aria-hidden="true">
-              <span>Candidate</span>
-              <span>Stage</span>
-              <span>Progress</span>
+        <div className="leaderboard-candidate-empty">
+          <div className="leaderboard-candidate-empty-copy">
+            <span><Hourglass size={22} /></span>
+            <div>
+              <strong>Candidate intake is paused</strong>
+              <p>Active pull request evaluations will appear here when the benchmark workflow resumes.</p>
             </div>
-            <div className="leaderboard-candidate-list custom-scrollbar" role="list">
-              {candidates.map((candidate) => (
-                <CandidateCard candidate={candidate} key={candidate.id} now={now} />
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="leaderboard-candidate-empty">
-            <div className="leaderboard-candidate-empty-copy">
-              <span><Hourglass size={22} /></span>
-              <div>
-                <strong>Queue is clear</strong>
-                <p>Listening for the next submitted pull request.</p>
-              </div>
-              <span className="leaderboard-candidate-listening"><CircleDot size={13} /> Live intake</span>
-            </div>
-            <ol className="leaderboard-pipeline-preview" aria-label="Candidate evaluation pipeline">
-              {pipelineStages.map((stage, index) => (
-                <li key={stage.id}>
-                  <i>{index + 1}</i>
-                  <span>{stage.label}</span>
-                </li>
-              ))}
-            </ol>
           </div>
-        )}
+        </div>
       </section>
     </section>
-  );
-}
-
-function CandidateCard({
-  candidate,
-  now
-}: {
-  candidate: CandidateEntry;
-  now: number;
-}) {
-  return (
-    <article className="leaderboard-candidate-card" role="listitem">
-      <div className="leaderboard-candidate-identity" aria-hidden="true">
-        <Avatar contributor={candidate.contributor} className="candidate" />
-        <span className="leaderboard-candidate-pr-mark"><GitPullRequest size={10} /></span>
-      </div>
-      <div className="leaderboard-candidate-main">
-        <div className="leaderboard-candidate-title">
-          <strong>{pullRequestText(candidate.pullRequest)}</strong>
-        </div>
-        <p title={candidate.pullRequest.title}>{candidate.pullRequest.title}</p>
-        <small className="leaderboard-candidate-byline" title={`@${candidate.contributor.login} · submitted ${formatRelativeTime(candidate.submittedAt, now)}`}>
-          <span>@{candidate.contributor.login}</span>
-          <span>submitted {formatRelativeTime(candidate.submittedAt, now)}</span>
-        </small>
-      </div>
-      <StageBadge stage={candidate.stage} />
-      <div
-        className="leaderboard-candidate-progress"
-        role="progressbar"
-        aria-label={`${candidate.progress}% complete`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={Math.round(candidate.progress)}
-      >
-        <span><strong>{Math.round(candidate.progress)}%</strong></span>
-        <i><b style={{ width: `${Math.max(2, Math.min(100, candidate.progress))}%` }} /></i>
-      </div>
-    </article>
   );
 }
 
 function HistoryPanel({
   entries,
   filter,
-  king,
   now,
   onFilterChange,
   onOpenDetails,
@@ -606,7 +286,6 @@ function HistoryPanel({
 }: {
   entries: LeaderboardEntry[];
   filter: HistoryFilter;
-  king: LeaderboardEntry | null;
   now: number;
   onFilterChange: (filter: HistoryFilter) => void;
   onOpenDetails: (entry: LeaderboardEntry, trigger: HTMLElement) => void;
@@ -653,7 +332,6 @@ function HistoryPanel({
           <HistoryItem
             entry={entry}
             key={entry.runId}
-            king={king}
             now={now}
             onOpenDetails={onOpenDetails}
           />
@@ -679,17 +357,16 @@ function HistoryPanel({
 
 function HistoryItem({
   entry,
-  king,
   now,
   onOpenDetails
 }: {
   entry: LeaderboardEntry;
-  king: LeaderboardEntry | null;
   now: number;
   onOpenDetails: (entry: LeaderboardEntry, trigger: HTMLElement) => void;
 }) {
-  const result = historyResult(entry, king);
-  const stateTone = result.label === "Merged" ? "merged" : "closed";
+  const prState = pullRequestStatus(entry);
+  const benchmark = benchmarkStatus(entry);
+  const eligibility = eligibilityStatus(entry);
 
   return (
     <button
@@ -700,16 +377,17 @@ function HistoryItem({
     >
       <div className="leaderboard-history-identity" aria-hidden="true">
         <Avatar contributor={entry.contributor} className="history" />
-        <span className={`leaderboard-history-marker ${result.tone} state-${stateTone}`}>{result.icon}</span>
+        <span className={`leaderboard-history-marker state-${prState.tone}`}>{prState.icon}</span>
       </div>
       <div className="leaderboard-history-main">
         <div className="leaderboard-history-title">
           <strong>{pullRequestText(entry.pullRequest)}</strong>
-          <span className={`leaderboard-history-result ${result.tone} state-${stateTone}`}>{result.label}</span>
+          <span className={`leaderboard-history-result state-${prState.tone}`}>{prState.label}</span>
         </div>
         <p title={entry.pullRequest.title}>{entry.pullRequest.title}</p>
         <div className="leaderboard-history-meta">
-          <span className={`leaderboard-history-disposition ${result.tone}`}>{result.reason}</span>
+          <span className={`leaderboard-history-disposition ${benchmark.tone}`}>{benchmark.label}</span>
+          <span className={`leaderboard-history-disposition ${eligibility.tone}`}>{eligibility.label}</span>
           <span>@{entry.contributor.login}</span>
           <span>{formatRelativeTime(entry.completedAt, now)}</span>
           <span>{formatShortSha(entry.commitSha)}</span>
@@ -728,19 +406,19 @@ function HistoryItem({
 
 function PrDetailModal({
   entry,
-  king,
   now,
   onClose,
   trigger
 }: {
   entry: LeaderboardEntry;
-  king: LeaderboardEntry | null;
   now: number;
   onClose: () => void;
   trigger: HTMLElement | null;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
-  const result = historyResult(entry, king);
+  const prState = pullRequestStatus(entry);
+  const benchmark = benchmarkStatus(entry);
+  const eligibility = eligibilityStatus(entry);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -812,11 +490,13 @@ function PrDetailModal({
       >
           <header>
             <div className="leaderboard-pr-modal-title-group">
-              <span className={`leaderboard-pr-modal-icon ${result.tone}`}><GitPullRequest size={20} /></span>
+              <span className={`leaderboard-pr-modal-icon ${prState.tone}`}><GitPullRequest size={20} /></span>
               <div>
                 <div className="leaderboard-pr-modal-kicker">
                   <span>{pullRequestText(entry.pullRequest)}</span>
-                  <span className={result.tone}>{result.label}</span>
+                  <span className={prState.tone}>{prState.label}</span>
+                  <span className={benchmark.tone}>{benchmark.label}</span>
+                  <span className={eligibility.tone}>{eligibility.label}</span>
                 </div>
                 <h2 id="leaderboard-pr-modal-title">{entry.pullRequest.title}</h2>
               </div>
@@ -832,7 +512,7 @@ function PrDetailModal({
                 <Avatar className="modal" contributor={entry.contributor} />
                 <div>
                   <strong>@{entry.contributor.login}</strong>
-                  <span>{result.reason} · {formatRelativeTime(entry.completedAt, now)}</span>
+                  <span>Benchmark completed {formatRelativeTime(entry.completedAt, now)}</span>
                 </div>
               </div>
               <div className="leaderboard-pr-modal-score">
@@ -1138,15 +818,6 @@ function HistoryPagination({
   );
 }
 
-function StageBadge({ stage }: { stage: CandidateStage }) {
-  return (
-    <span className={`leaderboard-stage-badge ${stage}`}>
-      {stage === "benchmarking" || stage === "judging" ? <Loader2 className="spin" size={13} /> : <CircleDot size={13} />}
-      {stageLabel(stage)}
-    </span>
-  );
-}
-
 function PanelHeader({
   icon,
   inlineValue = false,
@@ -1230,20 +901,22 @@ function githubAvatarUrl(login: string) {
 function buildHistory(
   entries: LeaderboardEntry[],
   filter: HistoryFilter,
-  query: string,
-  king: LeaderboardEntry | null
+  query: string
 ) {
   const normalizedQuery = query.trim().toLowerCase();
 
   return [...entries]
     .filter((entry) => {
-      const outcome = historyOutcome(entry, king);
+      if (!isResolvedPullRequest(entry)) {
+        return false;
+      }
+
       const matchesFilter =
         filter === "all" ||
-        (filter === "merged" && outcome === "merged") ||
-        (filter === "closed" && outcome !== "merged") ||
-        (filter === "requirements" && outcome === "requirements") ||
-        (filter === "violation" && outcome === "violation");
+        (filter === "merged" && entry.pullRequest.state === "merged") ||
+        (filter === "closed" && entry.pullRequest.state === "closed") ||
+        (filter === "eligible" && isEligible(entry)) ||
+        (filter === "failed" && entry.status === "fail");
 
       if (!matchesFilter) {
         return false;
@@ -1293,43 +966,35 @@ function mostRecent(entries: LeaderboardEntry[]) {
 }
 
 function isEligible(entry: LeaderboardEntry) {
-  return entry.status === "pass" && entry.improvement.mergeEligible;
+  return entry.improvement.mergeEligible;
 }
 
-function historyOutcome(
-  entry: LeaderboardEntry,
-  king: LeaderboardEntry | null
-): "merged" | "requirements" | "violation" | "closed" {
-  if (entry.runId === king?.runId) {
-    return "merged";
+function isResolvedPullRequest(entry: LeaderboardEntry) {
+  return entry.pullRequest.state === "merged" || entry.pullRequest.state === "closed";
+}
+
+function pullRequestStatus(entry: LeaderboardEntry): PullRequestStatus {
+  if (entry.pullRequest.state === "merged") {
+    return { icon: <GitMerge size={14} />, label: "Merged", tone: "merged" };
   }
-  if (entry.status === "fail") {
-    return "violation";
+  if (entry.pullRequest.state === "closed") {
+    return { icon: <XCircle size={14} />, label: "Closed", tone: "closed" };
   }
+  return { icon: <GitPullRequest size={14} />, label: "State unavailable", tone: "unknown" };
+}
+
+function benchmarkStatus(entry: LeaderboardEntry): BenchmarkStatus {
+  if (entry.status === "pass") {
+    return { label: "Benchmark passed", tone: "passed" };
+  }
+  return { label: "Benchmark failed", tone: "failed" };
+}
+
+function eligibilityStatus(entry: LeaderboardEntry): EligibilityStatus {
   if (isEligible(entry)) {
-    return "requirements";
+    return { label: "Eligible", tone: "eligible" };
   }
-  return "closed";
-}
-
-function historyResult(entry: LeaderboardEntry, king: LeaderboardEntry | null): {
-  icon: ReactNode;
-  label: string;
-  reason: string;
-  tone: "merged" | "requirements" | "violation" | "closed";
-} {
-  const outcome = historyOutcome(entry, king);
-
-  if (outcome === "merged") {
-    return { icon: <GitMerge size={14} />, label: "Merged", reason: "Selected benchmark baseline", tone: "merged" };
-  }
-  if (outcome === "violation") {
-    return { icon: <XCircle size={14} />, label: "Closed", reason: "Rule violation", tone: "violation" };
-  }
-  if (outcome === "requirements") {
-    return { icon: <CheckCircle2 size={14} />, label: "Closed", reason: "Requirements met", tone: "requirements" };
-  }
-  return { icon: <Minus size={14} />, label: "Closed", reason: "Requirements not met", tone: "closed" };
+  return { label: "Not eligible", tone: "ineligible" };
 }
 
 function historyPageTokens(pageCount: number, currentPage: number): Array<number | "ellipsis"> {
@@ -1352,32 +1017,6 @@ function historyPageTokens(pageCount: number, currentPage: number): Array<number
   });
 
   return tokens;
-}
-
-function statusLabel(status: RefreshStatus) {
-  if (status === "updating") {
-    return "Updating";
-  }
-  if (status === "stale") {
-    return "Stale";
-  }
-  return "Live";
-}
-
-function stageLabel(stage: CandidateStage) {
-  if (stage === "benchmarking") {
-    return "Benchmarking";
-  }
-  if (stage === "judging") {
-    return "Judging";
-  }
-  if (stage === "policy") {
-    return "Policy Check";
-  }
-  if (stage === "queued") {
-    return "Queued";
-  }
-  return "Submitted";
 }
 
 function formatDelta(value: number | null) {
