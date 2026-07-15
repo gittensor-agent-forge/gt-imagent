@@ -12897,3 +12897,240 @@ body .leaderboard-pr-modal-dimensions small {
     border-top: 1px solid rgba(99, 222, 255, 0.1);
   }
 }
+
+/* Leaderboard UI: Frontier Progress + Head-to-Head, layered above the King/Queue/History panels. */
+
+body .leaderboard-frontier-region {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.85fr);
+  margin: 0 auto 18px;
+  max-width: 1500px;
+  min-width: 0;
+  width: 100%;
+}
+
+body .leaderboard-frontier-panel,
+body .leaderboard-rivalry-panel {
+  background: transparent;
+  border: 1px solid var(--leaderboard-line);
+  border-radius: 18px;
+  box-shadow:
+    0 18px 44px rgba(0, 7, 20, 0.34),
+    0 6px 16px rgba(0, 8, 20, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px 22px;
+}
+
+body .leaderboard-frontier-panel-title {
+  align-items: center;
+  color: var(--leaderboard-cyan);
+  display: inline-flex;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 900;
+  gap: 7px;
+  text-transform: uppercase;
+}
+
+body .leaderboard-frontier-panel-head {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+}
+
+body .leaderboard-frontier-panel-head strong {
+  color: var(--leaderboard-text);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 24px;
+}
+
+body .leaderboard-frontier-svg {
+  display: block;
+  height: 96px;
+  overflow: visible;
+  width: 100%;
+}
+
+body .leaderboard-frontier-point {
+  fill: rgba(0, 226, 251, 0.55);
+}
+
+body .leaderboard-frontier-point--new {
+  animation: leaderboard-frontier-pulse 2.4s ease-in-out infinite;
+  fill: var(--leaderboard-green);
+  filter: drop-shadow(0 0 6px rgba(133, 245, 173, 0.7));
+}
+
+@keyframes leaderboard-frontier-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+body .leaderboard-frontier-panel-foot {
+  color: var(--leaderboard-muted);
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+}
+
+body .leaderboard-rivalry-panel-head {
+  display: flex;
+}
+
+body .leaderboard-rivalry-body {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+body .leaderboard-rivalry-divider {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+body .leaderboard-rivalry-divider span {
+  background: linear-gradient(180deg, transparent, rgba(99, 222, 255, 0.3), transparent);
+  border-radius: 999px;
+  height: 100%;
+  min-height: 56px;
+  width: 2px;
+}
+
+body .leaderboard-rivalry-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+body .leaderboard-rivalry-role {
+  color: var(--leaderboard-muted);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body .leaderboard-rivalry-card--leader .leaderboard-rivalry-role {
+  color: var(--leaderboard-green);
+}
+
+body .leaderboard-rivalry-identity {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+body .leaderboard-rivalry-identity img {
+  border: 2px solid var(--leaderboard-line);
+  border-radius: 50%;
+  height: 38px;
+  object-fit: cover;
+  width: 38px;
+}
+
+body .leaderboard-rivalry-identity strong {
+  color: var(--leaderboard-text);
+  display: block;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body .leaderboard-rivalry-identity span {
+  color: var(--leaderboard-muted);
+  display: block;
+  font-size: 12px;
+}
+
+body .leaderboard-rivalry-score {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+
+body .leaderboard-rivalry-score strong {
+  color: var(--leaderboard-text);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 26px;
+}
+
+body .leaderboard-rivalry-score small {
+  color: var(--leaderboard-muted);
+  font-size: 11px;
+}
+
+body .leaderboard-rivalry-dimensions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body .leaderboard-rivalry-dimensions span {
+  background: rgba(0, 226, 251, 0.08);
+  border: 1px solid var(--leaderboard-line);
+  border-radius: 999px;
+  color: var(--leaderboard-muted);
+  font-size: 10px;
+  padding: 4px 8px;
+}
+
+body .leaderboard-rivalry-dimensions strong {
+  color: var(--leaderboard-text);
+}
+
+body .leaderboard-rivalry-link {
+  align-items: center;
+  color: var(--leaderboard-cyan);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 4px;
+}
+
+body .leaderboard-rivalry-empty {
+  align-items: center;
+  border: 1px dashed var(--leaderboard-line);
+  border-radius: 14px;
+  color: var(--leaderboard-muted);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 16px;
+  text-align: center;
+}
+
+body .leaderboard-rivalry-empty span {
+  color: var(--leaderboard-text);
+  font-weight: 800;
+}
+
+@media (max-width: 1040px) {
+  body .leaderboard-frontier-region {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  body .leaderboard-rivalry-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .leaderboard-rivalry-divider span {
+    height: 2px;
+    min-height: 0;
+    width: 100%;
+  }
+}
