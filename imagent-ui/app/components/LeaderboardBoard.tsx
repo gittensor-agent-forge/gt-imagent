@@ -60,7 +60,12 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
   const [query, setQuery] = useState("");
   const [selectedEntry, setSelectedEntry] = useState<LeaderboardEntry | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // `now` stays null until the client mounts. Seeding it with Date.now() during
+  // render made the server bake one clock reading into the SSR HTML while
+  // hydration computed another, so recent "x ago" timestamps mismatched and
+  // React discarded and re-rendered the tree. Relative time is now purely
+  // client-driven, starting on mount.
+  const [now, setNow] = useState<number | null>(null);
   const modalTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -68,6 +73,7 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
   }, []);
 
   useEffect(() => {
+    setNow(Date.now());
     const timer = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
@@ -286,7 +292,7 @@ function HistoryPanel({
 }: {
   entries: LeaderboardEntry[];
   filter: HistoryFilter;
-  now: number;
+  now: number | null;
   onFilterChange: (filter: HistoryFilter) => void;
   onOpenDetails: (entry: LeaderboardEntry, trigger: HTMLElement) => void;
   onPageChange: (page: number) => void;
@@ -361,7 +367,7 @@ function HistoryItem({
   onOpenDetails
 }: {
   entry: LeaderboardEntry;
-  now: number;
+  now: number | null;
   onOpenDetails: (entry: LeaderboardEntry, trigger: HTMLElement) => void;
 }) {
   const prState = pullRequestStatus(entry);
@@ -411,7 +417,7 @@ function PrDetailModal({
   trigger
 }: {
   entry: LeaderboardEntry;
-  now: number;
+  now: number | null;
   onClose: () => void;
   trigger: HTMLElement | null;
 }) {
@@ -1091,10 +1097,26 @@ function parseTimestamp(value: string) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function formatRelativeTime(value: string, referenceTime: number) {
+const RELATIVE_TIME_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+] as const;
+
+function formatAbsoluteDate(timestamp: number) {
+  const date = new Date(timestamp);
+  return `${RELATIVE_TIME_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
+}
+
+function formatRelativeTime(value: string, referenceTime: number | null) {
   const timestamp = parseTimestamp(value);
   if (timestamp === null) {
     return "pending";
+  }
+
+  // Pre-mount (server render and first client render) `referenceTime` is null:
+  // render a timezone-independent absolute date so both outputs match exactly.
+  // The live "x ago" text takes over once the client clock is available.
+  if (referenceTime === null) {
+    return formatAbsoluteDate(timestamp);
   }
 
   const seconds = Math.max(0, Math.round((referenceTime - timestamp) / 1000));
