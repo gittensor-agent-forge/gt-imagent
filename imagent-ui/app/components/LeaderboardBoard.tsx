@@ -78,6 +78,7 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
   }, []);
 
   const king = useMemo(() => getCurrentKing(entries), [entries]);
+  const archiveStats = useMemo(() => buildArchiveStats(entries), [entries]);
   const filteredHistoryEntries = useMemo(
     () => buildHistory(entries, historyFilter, query),
     [entries, historyFilter, query]
@@ -102,8 +103,8 @@ export function LeaderboardBoard({ entries }: { entries: LeaderboardEntry[] }) {
         <h1 className="leaderboard-page-title">PR Benchmark History</h1>
 
         <div className="leaderboard-state-priority">
-          <CandidateQueue />
           <KingCard entry={king} onOpenDetails={openEntryDetails} />
+          <SeasonRail stats={archiveStats} />
         </div>
 
         <HistoryPanel
@@ -247,20 +248,42 @@ function KingCard({
   );
 }
 
-function CandidateQueue() {
+function SeasonRail({ stats }: { stats: ArchiveStats }) {
+  // Derived from the same report metadata the resolved-PR history reads:
+  // Merged/Closed come from pullRequest.state, Eligible from a passed benchmark
+  // that cleared the merge threshold (see isEligible). No mock or polled data.
+  const statTiles: Array<{ icon: ReactNode; label: string; value: string }> = [
+    { icon: <History size={14} />, label: "Reports", value: String(stats.total) },
+    { icon: <GitMerge size={14} />, label: "Merged", value: String(stats.merged) },
+    { icon: <XCircle size={14} />, label: "Closed", value: String(stats.closed) },
+    { icon: <Check size={14} />, label: "Eligible", value: String(stats.eligible) }
+  ];
+
   return (
-    <section className="leaderboard-candidate-region" aria-label="Candidate PR queue">
+    <section className="leaderboard-candidate-region" aria-label="Competition status and archive summary">
       <section className="leaderboard-candidate-panel">
         <div className="leaderboard-candidate-head">
           <PanelHeader inlineValue icon={<GitPullRequestArrow size={15} />} title="Candidate Queue" value="Paused" />
         </div>
 
-        <div className="leaderboard-candidate-empty">
-          <div className="leaderboard-candidate-empty-copy">
-            <span><Hourglass size={22} /></span>
+        <div className="leaderboard-season-body">
+          <div className="leaderboard-season-status">
+            <span className="leaderboard-season-status-icon"><Hourglass size={19} /></span>
             <div>
-              <strong>Candidate intake is paused</strong>
-              <p>Active pull request evaluations will appear here when the benchmark workflow resumes.</p>
+              <strong>Intake paused</strong>
+              <p>Live PR evaluations resume here when the benchmark workflow restarts.</p>
+            </div>
+          </div>
+
+          <div className="leaderboard-season-archive">
+            <span className="leaderboard-season-archive-kicker">Archive Summary</span>
+            <div className="leaderboard-season-stats" aria-label="Benchmark archive summary">
+              {statTiles.map((tile) => (
+                <div className="leaderboard-season-stat" key={tile.label}>
+                  <span>{tile.icon}{tile.label}</span>
+                  <strong>{tile.value}</strong>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -967,6 +990,22 @@ function mostRecent(entries: LeaderboardEntry[]) {
 
 function isEligible(entry: LeaderboardEntry) {
   return entry.status === "pass" && entry.improvement.mergeEligible;
+}
+
+type ArchiveStats = {
+  total: number;
+  merged: number;
+  closed: number;
+  eligible: number;
+};
+
+function buildArchiveStats(entries: LeaderboardEntry[]): ArchiveStats {
+  return {
+    total: entries.length,
+    merged: entries.filter((entry) => entry.pullRequest.state === "merged").length,
+    closed: entries.filter((entry) => entry.pullRequest.state === "closed").length,
+    eligible: entries.filter(isEligible).length
+  };
 }
 
 function isResolvedPullRequest(entry: LeaderboardEntry) {

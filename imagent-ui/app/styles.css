@@ -11243,7 +11243,9 @@ body .leaderboard-state-priority {
   align-items: stretch;
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1.42fr) minmax(350px, 0.9fr);
+  /* Champion-first: the reigning King leads as the wide primary column and the
+     paused candidate queue becomes a slim status + archive rail. */
+  grid-template-columns: minmax(0, 1.62fr) minmax(288px, 0.76fr);
   min-width: 0;
 }
 
@@ -11357,45 +11359,109 @@ body .leaderboard-candidate-head .leaderboard-panel-head {
   flex: 1 1 auto;
 }
 
-body .leaderboard-candidate-empty {
-  align-content: center;
-  display: grid;
-  justify-items: center;
+/* Season rail — paused status + archive summary */
+body .leaderboard-season-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  justify-content: center;
   min-height: 0;
-  padding: 28px;
+  padding: 24px 18px;
 }
 
-body .leaderboard-candidate-empty-copy {
+body .leaderboard-season-status {
   align-items: center;
   display: grid;
   gap: 13px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  max-width: 420px;
+  grid-template-columns: 46px minmax(0, 1fr);
 }
 
-body .leaderboard-candidate-empty-copy > span:first-child {
+body .leaderboard-season-status-icon {
   align-items: center;
   background: rgba(0, 226, 251, 0.09);
   border: 1px solid rgba(0, 226, 251, 0.2);
-  border-radius: 16px;
+  border-radius: 14px;
   color: var(--leaderboard-cyan);
   display: inline-flex;
-  height: 56px;
+  height: 46px;
   justify-content: center;
-  width: 56px;
+  width: 46px;
 }
 
-body .leaderboard-candidate-empty-copy strong {
+body .leaderboard-season-status strong {
   color: #ffffff;
-  font-size: 17px;
+  display: block;
+  font-size: 15px;
   font-weight: 900;
 }
 
-body .leaderboard-candidate-empty-copy p {
+body .leaderboard-season-status p {
   color: var(--leaderboard-muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
-  margin: 5px 0 0;
+  margin: 4px 0 0;
+}
+
+body .leaderboard-season-archive {
+  border-top: 1px solid rgba(99, 222, 255, 0.12);
+  display: grid;
+  gap: 14px;
+  padding-top: 22px;
+}
+
+body .leaderboard-season-archive-kicker {
+  color: var(--leaderboard-cyan);
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body .leaderboard-season-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body .leaderboard-season-stat {
+  background: rgba(6, 22, 42, 0.4);
+  border: 1px solid rgba(99, 222, 255, 0.14);
+  border-radius: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px 15px 16px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+body .leaderboard-season-stat:hover {
+  background: rgba(6, 22, 42, 0.6);
+  border-color: rgba(99, 222, 255, 0.28);
+}
+
+body .leaderboard-season-stat > span {
+  align-items: center;
+  color: var(--leaderboard-muted);
+  display: inline-flex;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+body .leaderboard-season-stat > span svg {
+  color: var(--leaderboard-cyan);
+  flex: 0 0 auto;
+}
+
+body .leaderboard-season-stat > strong {
+  color: #ffffff;
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 /* King panel */
