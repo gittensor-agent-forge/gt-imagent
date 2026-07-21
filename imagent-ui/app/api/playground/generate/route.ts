@@ -4,13 +4,23 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import {
+  BACKGROUND_OPTIONS,
   contentTypeForImage,
   DEFAULT_GENERATION_MODEL,
   getResolvedPlaygroundRuntime,
+  pruneRunDirectories,
+  QUALITY_OPTIONS,
   resolveRunDirectory,
   validateRunId,
   writeRunManifest
 } from "@/lib/playground";
+import {
+  getClientIp,
+  isRequestAuthorized,
+  rateLimit,
+  releaseGenerationSlot,
+  tryAcquireGenerationSlot
+} from "@/lib/security";
 import { resolvePublicSiteUrl } from "@/lib/site";
 
 type GenerateRequest = {
@@ -42,20 +52,66 @@ type AgentResult = {
 
 const execFileAsync = promisify(execFile);
 
+// Abuse controls for this expensive, credit-consuming endpoint.
+const GENERATION_TIMEOUT_MS = 120_000;
+const MAX_CONCURRENT_GENERATIONS = 2;
+const RATE_LIMIT_PER_MINUTE = 10;
+const MAX_PROMPT_LENGTH = 4000;
+
+async function parseJson<T>(request: Request): Promise<T | null> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   const started = performance.now();
-  const body = (await request.json()) as GenerateRequest;
+
+  if (!isRequestAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const clientIp = getClientIp(request);
+  const limit = rateLimit(`generate:${clientIp}`, RATE_LIMIT_PER_MINUTE);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down and try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
+
+  const body = await parseJson<GenerateRequest>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON request body." }, { status: 400 });
+  }
+
   const publicSiteUrl = resolvePublicSiteUrl();
   const prompt = String(body.prompt || "").trim();
   const model = DEFAULT_GENERATION_MODEL;
   const quality = String(body.quality || "auto").trim();
   const background = String(body.background || "auto").trim();
-  const runtime = await getResolvedPlaygroundRuntime();
-  const apiKey = String(body.apiKey || (runtime.hasServerApiKey ? process.env.OPENROUTER_API_KEY : "") || "").trim();
 
   if (!prompt) {
     return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
   }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return NextResponse.json(
+      { error: `Prompt must be ${MAX_PROMPT_LENGTH} characters or fewer.` },
+      { status: 400 }
+    );
+  }
+  if (!(QUALITY_OPTIONS as readonly string[]).includes(quality)) {
+    return NextResponse.json({ error: "Unsupported quality option." }, { status: 400 });
+  }
+  if (!(BACKGROUND_OPTIONS as readonly string[]).includes(background)) {
+    return NextResponse.json({ error: "Unsupported background option." }, { status: 400 });
+  }
+
+  const runtime = await getResolvedPlaygroundRuntime();
+  const apiKey = String(body.apiKey || (runtime.hasServerApiKey ? process.env.OPENROUTER_API_KEY : "") || "").trim();
+
   if (!apiKey) {
     return NextResponse.json({ error: "OpenRouter API key is required." }, { status: 400 });
   }
@@ -68,14 +124,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const runId = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  if (!validateRunId(runId)) {
-    return NextResponse.json({ error: "Failed to allocate a valid run ID." }, { status: 500 });
+  if (!tryAcquireGenerationSlot(MAX_CONCURRENT_GENERATIONS)) {
+    return NextResponse.json(
+      { error: "The generation queue is busy. Please try again in a moment." },
+      { status: 429 }
+    );
   }
-  const outputDir = resolveRunDirectory(runId);
-  const requestPath = path.join(outputDir, "request.json");
+
+  const runId = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   try {
+    if (!validateRunId(runId)) {
+      return NextResponse.json({ error: "Failed to allocate a valid run ID." }, { status: 500 });
+    }
+    const outputDir = resolveRunDirectory(runId);
+    const requestPath = path.join(outputDir, "request.json");
+
     await fs.mkdir(outputDir, { recursive: true });
     await fs.writeFile(
       requestPath,
@@ -102,7 +166,9 @@ export async function POST(request: Request) {
         ...process.env,
         OPENROUTER_API_KEY: apiKey
       },
-      maxBuffer: 10 * 1024 * 1024
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: GENERATION_TIMEOUT_MS,
+      killSignal: "SIGKILL"
     });
     if (stderr.trim()) {
       console.warn(stderr);
@@ -151,11 +217,13 @@ export async function POST(request: Request) {
       traceUrl: traceFileName ? `/api/playground/runs/${encodeURIComponent(runId)}/trace` : undefined
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Imagent generation failed."
-      },
-      { status: 502 }
-    );
+    // Log the detailed cause (Python stderr, filesystem paths, timeouts) on the
+    // server only; never leak it to the client.
+    console.error("Imagent generation failed:", error);
+    return NextResponse.json({ error: "Imagent generation failed. Please try again." }, { status: 502 });
+  } finally {
+    releaseGenerationSlot();
+    // Best-effort cap on data/agent-runs/ growth; never blocks the response path.
+    void pruneRunDirectories().catch(() => {});
   }
 }

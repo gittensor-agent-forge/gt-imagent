@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,9 @@ def evaluate_case(
     judge_config = judge_config or {}
     provider = str(judge_config.get("provider", "mock_text")).strip().lower()
     if provider in {"openrouter", "openrouter_vision"}:
+        # Intentional design: when a vision judge is configured, deterministic
+        # image_contains checks are skipped in favor of the model's holistic score.
+        # This is not a bug; text-based checks can't reliably validate a raster image.
         judge_result = evaluate_openrouter_vision(image_path, prompt=prompt, config=judge_config)
         return [], float(judge_result["overall_score"]), judge_result
 
@@ -112,14 +116,33 @@ def evaluate_openrouter_vision(image_path: Path, *, prompt: str, config: dict[st
         headers=headers,
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=int(config.get("timeout_seconds", 180))) as response:
-            response_payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise JudgeError(f"OpenRouter judge HTTP {exc.code}: {body}") from exc
-    except urllib.error.URLError as exc:
-        raise JudgeError(f"OpenRouter judge request failed: {exc}") from exc
+    timeout = int(config.get("timeout_seconds", 180))
+    max_retries = int(config.get("max_retries", 3))
+    delay_seconds = float(config.get("retry_backoff_seconds", 1.0))
+    response_payload: dict[str, Any] | None = None
+    # Retry transient failures (429/5xx and network errors) with exponential
+    # backoff, mirroring backends/openrouter_backend.py, so a single blip does
+    # not abort the whole benchmark.
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code in {429, 500, 502, 503, 504} and attempt < max_retries:
+                time.sleep(delay_seconds)
+                delay_seconds *= 2
+                continue
+            body = exc.read().decode("utf-8", errors="replace")
+            raise JudgeError(f"OpenRouter judge HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            if attempt < max_retries:
+                time.sleep(delay_seconds)
+                delay_seconds *= 2
+                continue
+            raise JudgeError(f"OpenRouter judge request failed: {exc}") from exc
+    if response_payload is None:  # pragma: no cover - defensive, loop always sets or raises
+        raise JudgeError("OpenRouter judge request failed after retries")
 
     content = _openrouter_message_content(response_payload)
     parsed = _parse_judge_json(content)
@@ -146,6 +169,9 @@ def evaluate_openrouter_vision(image_path: Path, *, prompt: str, config: dict[st
 
 
 def _read_visible_text(image_path: Path) -> str:
+    # Intentional design limitation: only .svg and .txt expose extractable text.
+    # Raster formats (.png/.jpg/...) return "" because text can't be recovered
+    # without OCR, which is out of scope here. This is not a bug.
     if not image_path.exists():
         return ""
     if image_path.suffix.lower() == ".svg":

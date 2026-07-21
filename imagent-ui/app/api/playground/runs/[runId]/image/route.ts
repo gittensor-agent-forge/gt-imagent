@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { loadRunManifest, resolveRunDirectory } from "@/lib/playground";
+import { loadRunManifest, resolveRunDirectory, safeInlineContentType } from "@/lib/playground";
 
 type RouteContext = {
   params: Promise<{ runId: string }>;
@@ -15,13 +15,18 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const artifactPath = path.join(resolveRunDirectory(runId), manifest.imageFileName);
+  const isSvg =
+    manifest.imageMediaType === "image/svg+xml" || manifest.imageFileName.toLowerCase().endsWith(".svg");
   try {
     const bytes = await fs.readFile(artifactPath);
     return new NextResponse(bytes, {
       headers: {
         "Cache-Control": "private, max-age=31536000, immutable",
-        "Content-Disposition": `inline; filename="${manifest.imageFileName}"`,
-        "Content-Type": manifest.imageMediaType
+        // Raster images render inline; svg is downgraded to a neutral type and
+        // forced to download so it cannot execute script in our origin.
+        "Content-Disposition": `${isSvg ? "attachment" : "inline"}; filename="${manifest.imageFileName}"`,
+        "Content-Type": safeInlineContentType(manifest.imageMediaType, manifest.imageFileName),
+        "X-Content-Type-Options": "nosniff"
       }
     });
   } catch {

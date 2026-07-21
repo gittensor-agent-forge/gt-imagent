@@ -351,7 +351,12 @@ def evaluate_pr(pr: dict[str, Any], baseline_score: float, benchmark_config: str
             baseline_commit = os.environ.get("IMAGENT_BASELINE_COMMIT", "").strip()
             if baseline_commit:
                 command.extend(["--baseline-commit", baseline_commit])
-            completed = subprocess.run([str(part) for part in command], text=True, cwd=candidate_dir)
+            completed = subprocess.run(
+                [str(part) for part in command],
+                text=True,
+                cwd=candidate_dir,
+                env=_candidate_subprocess_env(os.environ),
+            )
         finally:
             subprocess.run(["git", "worktree", "remove", "--force", str(candidate_dir)], check=False)
 
@@ -364,6 +369,20 @@ def evaluate_pr(pr: dict[str, Any], baseline_score: float, benchmark_config: str
     raw_delta = ranking.get("delta")
     delta = float(raw_delta) if raw_delta is not None else score - baseline_score
     return CandidateResult(pr=pr, report=report, score=score, delta=delta, head_sha=head_sha)
+
+
+def _candidate_subprocess_env(base_env: dict) -> dict:
+    """Return a copy of base_env safe to expose to untrusted candidate code.
+
+    The candidate benchmark subprocess executes contributor-supplied
+    ``agent/agent.py``, so secrets that only the orchestrator needs must not be
+    inherited. Strip the GitHub tokens to avoid exfiltration, but keep
+    ``OPENROUTER_API_KEY`` because the candidate needs it to generate images.
+    """
+    env = dict(base_env)
+    for name in ("GITHUB_TOKEN", "GH_TOKEN"):
+        env.pop(name, None)
+    return env
 
 
 def candidate_file_failures(filenames: list[str]) -> list[str]:
@@ -402,6 +421,12 @@ def policy_reasons(report: dict[str, Any]) -> list[str]:
 
 
 def is_merge_improvement_reason(reason: str) -> bool:
+    # NOTE: This is intentionally coupled to imagent-bench's human-readable policy
+    # reason strings (e.g. "score improvement 0.50 is below required 1.00"). A
+    # structured status field emitted by the benchmark would be more robust than
+    # matching English text; until that exists, guard against non-string input.
+    if not isinstance(reason, str):
+        return False
     return reason.startswith("score improvement ") and " is below required " in reason
 
 

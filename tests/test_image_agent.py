@@ -274,6 +274,223 @@ def test_base_agent_uses_memory_asset_reasoning_and_search_context(
     assert "context gap" in prompt
 
 
+def test_generate_handles_date_like_prompt_without_syntax_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+    agent = _setup_agent(tmp_path)
+
+    output = agent.generate(
+        {
+            "run_id": "date-prompt",
+            "capability": "reason",
+            "prompt": "Create a badge for the event on 2026-07-21.",
+            "allowed_tools": ["reason"],
+        },
+        tmp_path / "output",
+    )
+
+    assert Path(output["image_path"]).read_bytes() == b"fake-png-bytes"
+
+
+def test_generate_handles_incomplete_expression_without_syntax_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+    agent = _setup_agent(tmp_path)
+
+    output = agent.generate(
+        {
+            "run_id": "partial-expr",
+            "capability": "reason",
+            "prompt": "Rate this 8+ out of ten.",
+            "allowed_tools": ["reason"],
+        },
+        tmp_path / "output",
+    )
+
+    assert Path(output["image_path"]).read_bytes() == b"fake-png-bytes"
+
+
+def test_generate_handles_null_allowed_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+    agent = _setup_agent(tmp_path)
+
+    output = agent.generate(
+        {
+            "run_id": "null-tools",
+            "capability": "plan",
+            "prompt": "Create a simple poster.",
+            "allowed_tools": None,
+        },
+        tmp_path / "output",
+    )
+
+    assert Path(output["image_path"]).read_bytes() == b"fake-png-bytes"
+
+
+def test_read_assets_merges_multiple_json_assets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "a.json").write_text(
+        json.dumps({"title": "First Board", "sections": ["Alpha"], "required_text": ["Alpha"]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "b.json").write_text(
+        json.dumps({"title": "Second Board", "required_text": ["Beta"]}),
+        encoding="utf-8",
+    )
+    requests: list[dict[str, Any]] = []
+
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        requests.append(json.loads(request.data.decode("utf-8")))
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+    agent = _setup_agent(tmp_path)
+
+    merged = agent._read_assets(["b.json", "a.json"])
+
+    # Sorted-filename order: a.json then b.json. b.json overrides title and
+    # required_text; a.json's sections survive because b.json omits them.
+    assert merged["title"] == "Second Board"
+    assert merged["sections"] == ["Alpha"]
+    assert merged["required_text"] == ["Beta"]
+
+
+def test_image_bytes_from_url_rejects_file_scheme(tmp_path: Path) -> None:
+    agent = _setup_agent(tmp_path)
+    with pytest.raises(OpenRouterImageError, match="scheme is not allowed"):
+        agent_module._image_bytes_from_url(
+            "file:///etc/passwd", "image/png", agent.backend_config
+        )
+
+
+def test_cli_config_json_values_survive_without_flags(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"agent": {"image_backend": {"resolution": "4K", "aspect_ratio": "16:9"}}}),
+        encoding="utf-8",
+    )
+    captured: list[dict[str, Any]] = []
+
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        captured.append(json.loads(request.data.decode("utf-8")))
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+
+    exit_code = runtime_cli.main(
+        [
+            "Create a badge.",
+            "--config-json",
+            str(config_path),
+            "--run-id",
+            "config-survives",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured[0]["resolution"] == "4K"
+    assert captured[0]["aspect_ratio"] == "16:9"
+
+
+def test_cli_explicit_flag_overrides_config_json(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"agent": {"image_backend": {"resolution": "4K", "aspect_ratio": "16:9"}}}),
+        encoding="utf-8",
+    )
+    captured: list[dict[str, Any]] = []
+
+    def fake_urlopen(request: Any, timeout: int) -> "_FakeResponse":
+        captured.append(json.loads(request.data.decode("utf-8")))
+        return _FakeResponse(_image_response())
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(agent_module.urllib.request, "urlopen", fake_urlopen)
+
+    exit_code = runtime_cli.main(
+        [
+            "Create a badge.",
+            "--config-json",
+            str(config_path),
+            "--resolution",
+            "2K",
+            "--run-id",
+            "flag-overrides",
+            "--output-dir",
+            str(tmp_path / "out2"),
+        ]
+    )
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured[0]["resolution"] == "2K"
+    assert captured[0]["aspect_ratio"] == "16:9"
+
+
+def test_candidate_subprocess_env_strips_github_tokens_keeps_openrouter() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+    base_env = {
+        "GITHUB_TOKEN": "secret-gh",
+        "GH_TOKEN": "secret-gh2",
+        "OPENROUTER_API_KEY": "secret-or",
+        "PATH": "/usr/bin",
+    }
+
+    env = round_manager._candidate_subprocess_env(base_env)
+
+    assert "GITHUB_TOKEN" not in env
+    assert "GH_TOKEN" not in env
+    assert env["OPENROUTER_API_KEY"] == "secret-or"
+    assert env["PATH"] == "/usr/bin"
+    # original mapping is not mutated
+    assert base_env["GITHUB_TOKEN"] == "secret-gh"
+
+
+def test_merge_improvement_reason_guards_non_string() -> None:
+    from support.round_manager_import import load_round_manager
+
+    round_manager = load_round_manager()
+
+    assert round_manager.is_merge_improvement_reason(None) is False
+    assert round_manager.is_merge_improvement_reason(123) is False
+    assert (
+        round_manager.is_merge_improvement_reason("score improvement 0.50 is below required 1.00")
+        is True
+    )
+
+
 class _FakeResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import type { Dirent } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -7,6 +8,14 @@ const execFileAsync = promisify(execFile);
 const RUN_MANIFEST_FILE = "result.json";
 
 export { IMAGENT_GENERATION_MODEL_ID as DEFAULT_GENERATION_MODEL } from "./models";
+
+// Server-side allow-lists for generation inputs. These mirror the choices the
+// client offers and must never be inferred from the request body.
+export const QUALITY_OPTIONS = ["auto", "low", "medium", "high"] as const;
+export const BACKGROUND_OPTIONS = ["auto", "transparent", "opaque"] as const;
+
+// Keep the newest N run directories under data/agent-runs/; older ones are pruned.
+const MAX_RETAINED_RUN_DIRECTORIES = 200;
 
 export type PlaygroundRuntimeStatus = {
   ready: boolean;
@@ -113,7 +122,66 @@ export async function writeRunManifest(runId: string, manifest: RunManifest) {
 }
 
 export function validateRunId(value: string) {
-  return /^[A-Za-z0-9._-]+$/.test(value) ? value : null;
+  if (!/^[A-Za-z0-9._-]+$/.test(value)) {
+    return null;
+  }
+  // Reject "." / ".." / any all-dots name so a run ID can never resolve to a
+  // parent or the current directory even though "." is in the charset.
+  if (/^\.+$/.test(value)) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Content type used when serving a stored artifact inline. SVG is deliberately
+ * downgraded to a neutral binary type so a malicious stored svg cannot execute
+ * script in our origin, while real raster images still render inline.
+ */
+export function safeInlineContentType(mediaType: string, fileName: string) {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".svg" || mediaType === "image/svg+xml") {
+    return "application/octet-stream";
+  }
+  return mediaType;
+}
+
+/**
+ * Best-effort cap on data/agent-runs/ growth: keep the newest
+ * MAX_RETAINED_RUN_DIRECTORIES run directories (by mtime) and remove the rest.
+ * Failures are swallowed so pruning never breaks a generation.
+ */
+export async function pruneRunDirectories(keep: number = MAX_RETAINED_RUN_DIRECTORIES) {
+  const root = resolvePlaygroundEnvironment().outputRoot;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const runDirs = entries.filter((entry) => entry.isDirectory() && validateRunId(entry.name));
+  if (runDirs.length <= keep) {
+    return;
+  }
+
+  const withMtime = await Promise.all(
+    runDirs.map(async (entry) => {
+      const fullPath = path.join(root, entry.name);
+      try {
+        const stat = await fs.stat(fullPath);
+        return { fullPath, mtimeMs: stat.mtimeMs };
+      } catch {
+        return { fullPath, mtimeMs: 0 };
+      }
+    })
+  );
+
+  withMtime.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  const stale = withMtime.slice(keep);
+  await Promise.all(
+    stale.map((entry) => fs.rm(entry.fullPath, { recursive: true, force: true }).catch(() => {}))
+  );
 }
 
 export function contentTypeForImage(imagePath: string) {

@@ -251,7 +251,9 @@ def _ranking(
         }
 
     delta = round(candidate_score - baseline_score, 6)
-    label = "score-regression"
+    # Only a negative delta is a regression. A positive or zero delta that is too
+    # small to clear the smallest improvement threshold is a non-regression.
+    label = "score-regression" if delta < 0 else "no-significant-change"
     for name, threshold in sorted(thresholds.items(), key=lambda item: item[1]):
         if delta >= threshold:
             label = f"improvement-{name}"
@@ -296,7 +298,10 @@ def _percentile(values: list[float], percentile: int) -> float:
     if len(values) == 1:
         return round(values[0], 3)
     ordered = sorted(values)
-    return round(float(statistics.quantiles(ordered, n=100, method="inclusive")[percentile - 1]), 3)
+    quantiles = statistics.quantiles(ordered, n=100, method="inclusive")
+    # quantiles has 99 cut points (indices 0..98); clamp so p<=0 and p=100 stay in range.
+    index = min(max(percentile - 1, 0), len(quantiles) - 1)
+    return round(float(quantiles[index]), 3)
 
 
 def _utc_now() -> str:
@@ -305,7 +310,8 @@ def _utc_now() -> str:
 
 def _append_log(path: Path, message: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.open("a", encoding="utf-8").write(json.dumps({"ts": _utc_now(), "message": message}) + "\n")
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": _utc_now(), "message": message}) + "\n")
 
 
 def _validate_local_repository_commit(repository: str | Path, requested_commit: str | None, actual_commit: str) -> None:
@@ -359,6 +365,7 @@ def _normalize_repository_identifier(value: str) -> str:
     text = str(value).strip()
     if not text:
         return ""
+    text = _strip_url_credentials(text)
     for pattern in (
         r"^https?://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$",
         r"^ssh://git@github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$",
@@ -369,6 +376,21 @@ def _normalize_repository_identifier(value: str) -> str:
         if match:
             return f"{match.group('owner')}/{match.group('repo')}"
     return text.removesuffix(".git")
+
+
+def _strip_url_credentials(text: str) -> str:
+    # Remove embedded userinfo (e.g. tokens or user:pass) from a URL authority so
+    # credentials never leak into the normalized identifier or the report. Only
+    # scheme-based URLs carry userinfo before an "@" in the authority; the SCP
+    # form (git@github.com:owner/repo.git) has no "//" and is left untouched.
+    match = re.match(r"^(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)(?P<rest>.*)$", text)
+    if not match:
+        return text
+    rest = match.group("rest")
+    authority, sep, tail = rest.partition("/")
+    if "@" in authority:
+        authority = authority.rsplit("@", 1)[1]
+    return f"{match.group('scheme')}{authority}{sep}{tail}"
 
 
 def _github_report_metadata() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:

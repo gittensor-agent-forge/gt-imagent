@@ -7,7 +7,14 @@ from typing import Any
 
 import pytest
 
-from imagent_bench.runner import BenchmarkRunError, _case_status, _normalize_repository_identifier, run
+from imagent_bench.runner import (
+    BenchmarkRunError,
+    _case_status,
+    _normalize_repository_identifier,
+    _percentile,
+    _ranking,
+    run,
+)
 
 
 def _imagent_repository() -> Path:
@@ -176,6 +183,47 @@ def test_runner_reads_pull_request_metadata_from_github_event(
 def test_normalize_repository_identifier_handles_common_github_urls() -> None:
     assert _normalize_repository_identifier("https://github.com/gittensor-agent-forge/gt-imagent.git") == "gittensor-agent-forge/gt-imagent"
     assert _normalize_repository_identifier("git@github.com:imagent-ai/imagent-bench.git") == "imagent-ai/imagent-bench"
+
+
+def test_normalize_repository_identifier_strips_embedded_credentials() -> None:
+    token_url = "https://ghp_secretToken123@github.com/o/r.git"
+    userpass_url = "https://u:p@github.com/o/r.git"
+
+    assert _normalize_repository_identifier(token_url) == "o/r"
+    assert _normalize_repository_identifier(userpass_url) == "o/r"
+    # No credential substring may survive into the normalized identifier.
+    assert "ghp_secretToken123" not in _normalize_repository_identifier(token_url)
+    assert "@" not in _normalize_repository_identifier(token_url)
+    assert "u:p" not in _normalize_repository_identifier(userpass_url)
+    # SCP form must remain unaffected by the credential stripping.
+    assert _normalize_repository_identifier("git@github.com:o/r.git") == "o/r"
+
+
+def test_percentile_handles_p100_and_p95_without_indexerror() -> None:
+    values = [float(v) for v in range(1, 101)]
+
+    # p=100 previously raised IndexError; it must now clamp to the top cut point.
+    p100 = _percentile(values, 100)
+    p95 = _percentile(values, 95)
+
+    assert isinstance(p100, float)
+    assert p95 <= p100 <= 100.0
+    assert p95 == pytest.approx(95.0, abs=1.0)
+
+
+def test_ranking_labels_small_positive_delta_as_non_regression() -> None:
+    ranking = _ranking({}, candidate_score=95.5, baseline_score=95.0, baseline_commit="abc")
+
+    assert ranking["delta"] == 0.5
+    assert ranking["label"] == "no-significant-change"
+    assert ranking["merge_eligible"] is False
+
+
+def test_ranking_labels_negative_delta_as_regression() -> None:
+    ranking = _ranking({}, candidate_score=94.0, baseline_score=95.0, baseline_commit="abc")
+
+    assert ranking["delta"] == -1.0
+    assert ranking["label"] == "score-regression"
 
 
 def test_runner_rejects_local_repository_commit_mismatch(tmp_path: Path) -> None:

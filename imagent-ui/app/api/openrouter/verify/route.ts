@@ -4,7 +4,10 @@ import {
   IMAGENT_GENERATION_MODEL_ID,
   IMAGENT_GENERATION_MODEL_OPTION
 } from "@/lib/models";
+import { getClientIp, isRequestAuthorized, rateLimit } from "@/lib/security";
 import { resolvePublicSiteUrl } from "@/lib/site";
+
+const VERIFY_RATE_LIMIT_PER_MINUTE = 20;
 
 type VerifyRequest = {
   apiKey?: string;
@@ -47,6 +50,19 @@ const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
 const OPENROUTER_IMAGE_MODELS_URL = "https://openrouter.ai/api/v1/images/models";
 
 export async function POST(request: Request) {
+  if (!isRequestAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const clientIp = getClientIp(request);
+  const limit = rateLimit(`verify:${clientIp}`, VERIFY_RATE_LIMIT_PER_MINUTE);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down and try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
+
   const body = await parseJson<VerifyRequest>(request);
   const publicSiteUrl = resolvePublicSiteUrl();
   const requestedApiKey = String(body.apiKey || "").trim();
