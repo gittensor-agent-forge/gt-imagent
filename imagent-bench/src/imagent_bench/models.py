@@ -4,6 +4,14 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
+def _safe_int(value: Any) -> int:
+    # Non-integer ids/seeds should not abort the whole run; fall back to 0.
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     benchmark_version: str
@@ -32,13 +40,13 @@ class BenchmarkCase:
         raw_id = record.get("id") or record.get("run_id") or record.get("ID")
         if raw_id is None:
             raise ValueError("benchmark case is missing id")
-        numeric_id = int(record.get("ID", record.get("numeric_id", 0)) or 0)
+        numeric_id = _safe_int(record.get("ID", record.get("numeric_id", 0)) or 0)
         return cls(
             id=str(raw_id),
             numeric_id=numeric_id,
             prompt=str(record["prompt"]),
             capability=str(record.get("capability", "plan")),
-            seed=int(record.get("seed", 0)),
+            seed=_safe_int(record.get("seed", 0)),
             allowed_tools=[str(value) for value in record.get("allowed_tools", [])],
             expected=dict(record.get("expected", {}) or {}),
             assets=[str(value) for value in record.get("assets", []) or []],

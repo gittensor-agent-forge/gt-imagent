@@ -50,10 +50,10 @@ def _parser(defaults: dict[str, str]) -> argparse.ArgumentParser:
         help="Directory for generated image and trace artifacts. Defaults to results/<UTC datetime>.",
     )
     parser.add_argument("--model", default="", help="Override OpenRouter image model in the generated config.")
-    parser.add_argument("--resolution", default="1K", help="OpenRouter image resolution.")
-    parser.add_argument("--aspect-ratio", default="1:1", help="OpenRouter image aspect ratio.")
-    parser.add_argument("--referer", default="https://tryimagent.com", help="OpenRouter HTTP-Referer attribution header.")
-    parser.add_argument("--title", default="Imagent CLI", help="OpenRouter X-OpenRouter-Title attribution header.")
+    parser.add_argument("--resolution", default=None, help="OpenRouter image resolution.")
+    parser.add_argument("--aspect-ratio", default=None, help="OpenRouter image aspect ratio.")
+    parser.add_argument("--referer", default=None, help="OpenRouter HTTP-Referer attribution header.")
+    parser.add_argument("--title", default=None, help="OpenRouter X-OpenRouter-Title attribution header.")
     return parser
 
 
@@ -105,15 +105,25 @@ def _config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         backend["model"] = args.model
     else:
         backend.setdefault("model", "google/gemini-3.1-flash-image")
-    backend["resolution"] = args.resolution
-    backend["aspect_ratio"] = args.aspect_ratio
+    # An explicit CLI flag overrides the config value; otherwise fall back to the
+    # documented default only when the config file did not supply one (setdefault),
+    # so config-file values are not silently clobbered by argparse defaults.
+    _apply_arg_or_default(backend, "resolution", args.resolution, "1K")
+    _apply_arg_or_default(backend, "aspect_ratio", args.aspect_ratio, "1:1")
     backend.setdefault("output_format", "png")
     backend.setdefault("send_output_format", False)
     backend.setdefault("send_seed", False)
     backend.setdefault("timeout_seconds", 240)
-    backend["referer"] = args.referer
-    backend["title"] = args.title
+    _apply_arg_or_default(backend, "referer", args.referer, "https://tryimagent.com")
+    _apply_arg_or_default(backend, "title", args.title, "Imagent CLI")
     return config
+
+
+def _apply_arg_or_default(backend: dict[str, Any], key: str, value: Any, default: Any) -> None:
+    if value is not None:
+        backend[key] = value
+    else:
+        backend.setdefault(key, default)
 
 
 def _load_object(import_path: str) -> Any:

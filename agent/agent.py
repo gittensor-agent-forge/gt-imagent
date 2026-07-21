@@ -6,6 +6,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -121,7 +122,7 @@ class BaseImageAgent:
         )
         sections = self._sections_from_prompt(prompt) or assets.get("sections", [])
         required_text = [title, *sections, *assets.get("required_text", [])]
-        if "reason" in case.get("allowed_tools", []):
+        if "reason" in (case.get("allowed_tools") or []):
             display = self._reasoning_display(prompt)
             if display:
                 required_text.extend([display["answer"], display["display"]])
@@ -161,19 +162,23 @@ class BaseImageAgent:
         return "\n".join(line for line in lines if line)
 
     def _read_assets(self, values: Any) -> dict[str, Any]:
-        for value in values or []:
-            path = self._case_path(value)
-            if path.suffix.lower() != ".json":
-                continue
+        json_paths = [
+            path
+            for path in (self._case_path(value) for value in values or [])
+            if path.suffix.lower() == ".json"
+        ]
+        merged: dict[str, Any] = {"title": "", "sections": [], "required_text": []}
+        for path in sorted(json_paths, key=lambda item: item.name):
             data = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 continue
-            return {
-                "title": str(data.get("title") or ""),
-                "sections": [str(item) for item in data.get("sections", []) if str(item).strip()],
-                "required_text": [str(item) for item in data.get("required_text", []) if str(item).strip()],
+            merged = {
+                "title": str(data.get("title") or "") or merged["title"],
+                "sections": [str(item) for item in data.get("sections", []) if str(item).strip()] or merged["sections"],
+                "required_text": [str(item) for item in data.get("required_text", []) if str(item).strip()]
+                or merged["required_text"],
             }
-        return {"title": "", "sections": [], "required_text": []}
+        return merged
 
     def _read_search_facts(self, values: Any, prompt: str) -> list[str]:
         prompt_words = set(re.findall(r"[a-z0-9]+", prompt.lower()))
@@ -277,6 +282,10 @@ def _image_bytes_from_url(url: str, fallback_media_type: str, backend_config: di
         except ValueError as exc:
             raise OpenRouterImageError("OpenRouter image data URL included invalid base64 bytes") from exc
 
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme not in {"http", "https"}:
+        raise OpenRouterImageError(f"OpenRouter image URL scheme is not allowed: {scheme or url!r}")
+
     request = urllib.request.Request(url, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=int(backend_config.get("timeout_seconds", 240))) as response:
@@ -320,7 +329,10 @@ def _extract_expression(prompt: str) -> str:
     for match in re.finditer(rf"(?<![A-Za-z0-9_.])(?:{number}|\()[0-9()\s+\-*/.]*", prompt):
         candidate = match.group(0).strip().rstrip(".")
         if any(char.isdigit() for char in candidate) and any(op in candidate for op in "+-*/"):
-            ast.parse(candidate, mode="eval")
+            try:
+                ast.parse(candidate, mode="eval")
+            except SyntaxError:
+                continue
             return candidate
     return ""
 

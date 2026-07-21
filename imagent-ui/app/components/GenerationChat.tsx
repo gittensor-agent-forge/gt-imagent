@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
@@ -18,7 +17,6 @@ import {
   ChevronDown,
   Download,
   FileJson,
-  ImagePlus,
   KeyRound,
   Loader2,
   MessageCirclePlus,
@@ -63,11 +61,6 @@ type ChatSession = {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
-};
-
-type SelectedInputImage = {
-  name: string;
-  previewUrl: string;
 };
 
 type ModalState =
@@ -151,7 +144,6 @@ export function GenerationChat() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [selectedInputImage, setSelectedInputImage] = useState<SelectedInputImage | null>(null);
   const [level, setLevel] = useState("auto");
   const [apiKey, setApiKey] = useState("");
   const [draftApiKey, setDraftApiKey] = useState("");
@@ -173,7 +165,6 @@ export function GenerationChat() {
   const closeModalRef = useRef<() => void>(() => {});
   const preserveModalTriggerRef = useRef(false);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadRuntimeStatus() {
     try {
@@ -235,14 +226,6 @@ export function GenerationChat() {
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [prompt]);
-
-  useEffect(() => {
-    return () => {
-      if (selectedInputImage?.previewUrl) {
-        URL.revokeObjectURL(selectedInputImage.previewUrl);
-      }
-    };
-  }, [selectedInputImage?.previewUrl]);
 
   useEffect(() => {
     if (!modal) {
@@ -391,7 +374,6 @@ export function GenerationChat() {
     if (reusableSession) {
       setActiveSessionId(reusableSession.id);
       setPrompt("");
-      clearInputImage();
       setSidebarCollapsed(false);
       return;
     }
@@ -400,7 +382,6 @@ export function GenerationChat() {
     setSessions((current) => [session, ...current]);
     setActiveSessionId(session.id);
     setPrompt("");
-    clearInputImage();
     setSidebarCollapsed(false);
   }
 
@@ -417,31 +398,6 @@ export function GenerationChat() {
     event.preventDefault();
     if (canSend) {
       void sendPrompt(prompt);
-    }
-  }
-
-  function openImagePicker() {
-    imageInputRef.current?.click();
-  }
-
-  function selectInputImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file || !file.type.startsWith("image/")) {
-      return;
-    }
-
-    setSelectedInputImage({
-      name: file.name,
-      previewUrl: URL.createObjectURL(file)
-    });
-  }
-
-  function clearInputImage() {
-    setSelectedInputImage(null);
-    if (imageInputRef.current) {
-      imageInputRef.current.value = "";
     }
   }
 
@@ -471,7 +427,6 @@ export function GenerationChat() {
 
     appendSessionMessages(sessionId, [userMessage], titleFromPrompt(content), now);
     setPrompt("");
-    clearInputImage();
 
     if (runtimeStatus && !runtimeStatus.ready) {
       appendSessionMessages(sessionId, [
@@ -921,33 +876,7 @@ export function GenerationChat() {
 
             <form className="generation-chat-input" onSubmit={submit}>
               <div className="generation-input-control">
-                {selectedInputImage ? (
-                  <div className="generation-input-attachment">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={selectedInputImage.previewUrl} alt="" />
-                    <button type="button" aria-label={`Remove ${selectedInputImage.name}`} onClick={clearInputImage}>
-                      <X size={13} />
-                    </button>
-                  </div>
-                ) : null}
                 <div className="generation-input-row">
-                  <input
-                    ref={imageInputRef}
-                    className="generation-image-input"
-                    type="file"
-                    accept="image/*"
-                    onChange={selectInputImage}
-                    tabIndex={-1}
-                  />
-                  <button
-                    className="generation-input-icon-button generation-attach-button"
-                    type="button"
-                    aria-label="Attach image"
-                    title="Attach image"
-                    onClick={openImagePicker}
-                  >
-                    <ImagePlus size={22} strokeWidth={2.15} />
-                  </button>
                   <textarea
                     className="custom-scrollbar"
                     ref={promptTextareaRef}
