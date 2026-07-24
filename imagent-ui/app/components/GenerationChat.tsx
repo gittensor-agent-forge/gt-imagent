@@ -369,6 +369,13 @@ export function GenerationChat() {
     ? sessions.find((session) => session.id === modal.sessionId)
     : null;
 
+
+  function switchSession(sessionId: string) {
+    if (sessionId === activeSessionId) return;
+    setActiveSessionId(sessionId);
+    setPrompt("");
+  }
+
   function createSession() {
     const reusableSession = sessions.find((session) => session.messages.length === 0);
     if (reusableSession) {
@@ -705,7 +712,7 @@ export function GenerationChat() {
                     title={session.title}
                     onClick={() => {
                       if (sessions.length) {
-                        setActiveSessionId(session.id);
+                        switchSession(session.id);
                       }
                     }}
                   >
@@ -724,7 +731,7 @@ export function GenerationChat() {
                         type="button"
                         onClick={() => {
                           if (sessions.length) {
-                            setActiveSessionId(session.id);
+                            switchSession(session.id);
                           }
                         }}
                       >
