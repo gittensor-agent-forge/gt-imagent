@@ -298,6 +298,14 @@ function HistoryPanel({
   query: string;
   totalEntries: number;
 }) {
+  const trimmedQuery = query.trim();
+  const filtersActive = filter !== "all" || trimmedQuery.length > 0;
+  const activeFilterLabel = historyFilters.find((item) => item.id === filter)?.label ?? "All";
+  const clearFilters = () => {
+    onFilterChange("all");
+    onQueryChange("");
+  };
+
   return (
     <section className="leaderboard-history-panel" aria-label="Merged and closed PR history">
       <div className="leaderboard-history-head">
@@ -310,6 +318,16 @@ function HistoryPanel({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search PR, agent, contributor"
           />
+          {trimmedQuery ? (
+            <button
+              aria-label="Clear search"
+              className="leaderboard-history-search-clear"
+              onClick={() => onQueryChange("")}
+              type="button"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </label>
       </div>
 
@@ -325,7 +343,25 @@ function HistoryPanel({
             {item.label}
           </button>
         ))}
+        {filtersActive ? (
+          <button
+            aria-label="Clear history filters and search"
+            className="leaderboard-history-clear"
+            onClick={clearFilters}
+            type="button"
+          >
+            Clear
+          </button>
+        ) : null}
       </div>
+
+      {filtersActive ? (
+        <p aria-live="polite" className="leaderboard-history-summary">
+          {totalEntries === 0
+            ? `No matches for ${activeFilterLabel}${trimmedQuery ? ` · “${trimmedQuery}”` : ""}`
+            : `${totalEntries} match${totalEntries === 1 ? "" : "es"} · ${activeFilterLabel}${trimmedQuery ? ` · “${trimmedQuery}”` : ""}`}
+        </p>
+      ) : null}
 
       <div className="leaderboard-history-list custom-scrollbar">
         {entries.length ? entries.map((entry) => (
@@ -338,8 +374,17 @@ function HistoryPanel({
         )) : (
           <div className="leaderboard-history-empty">
             <History size={20} />
-            <strong>No Resolved PRs</strong>
-            <p>No merged or closed pull requests match this view.</p>
+            <strong>{filtersActive ? "No Matching PRs" : "No Resolved PRs"}</strong>
+            <p>
+              {filtersActive
+                ? "Nothing in the archive matches this filter or search. Clear the controls to see the full history."
+                : "No merged or closed pull requests match this view."}
+            </p>
+            {filtersActive ? (
+              <button className="leaderboard-history-empty-action" onClick={clearFilters} type="button">
+                Clear filters
+              </button>
+            ) : null}
           </div>
         )}
       </div>
