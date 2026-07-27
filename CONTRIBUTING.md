@@ -1,113 +1,54 @@
 # Contributing
 
-Imagent is built through Gittensor as an open environment for image-agent
-research. The active GitHub contribution track is a manual Leaderboard UI
-competition. It makes the benchmark archive easier to understand without
-changing benchmark results, agent code, runtime behavior, or the Generation
-page.
+Imagent is an open research project for image-generation agents, built through
+Gittensor.
 
-## Active Competition
+## There is no open contribution track right now
 
-Contributors may submit one focused Leaderboard UI pull request at a time.
-The completed Home page is the visual standard: preserve the dark product
-language, deliberate spacing, readable hierarchy, responsive behavior, and
-intentional motion.
+The previous tracks — Agent Benchmark rounds, Generation UI, and Leaderboard UI —
+have been retired along with their automation, labels, and PR templates. The
+workflow is being rebuilt around a king-of-the-hill competition where a
+challenger agent must beat the reigning agent head to head on the same problems.
 
-The PR rules workflow accepts only these files:
+Until that lands, unsolicited pull requests will not be benchmarked, scored, or
+merged. Please open an issue to discuss anything you want to work on first.
 
-- imagent-ui/app/leaderboard/page.tsx
-- imagent-ui/app/components/LeaderboardBoard.tsx
-- Leaderboard-local .tsx and .css files under imagent-ui/app/leaderboard/
-- Leaderboard-local .tsx and .css files under
-  imagent-ui/app/leaderboard/components/
-- imagent-ui/app/styles.css, limited to selectors used by the Leaderboard
+## What still applies
 
-Do not change API routes, report parsing, agent code, runtime code, benchmark
-logic, dependency metadata, deployment configuration, shared navigation, the
-Generation page, or unrelated pages. PRs outside the approved surface are
-labeled invalid-pr and closed automatically.
+If you do open a PR:
 
-Every Leaderboard UI PR must:
+- Use a conventional commit-style title, for example `fix: correct p95 latency
+  clamp`.
+- Keep one focused concern per PR and one atomic commit.
+- Describe what changed and how you tested it.
+- Run the checks below before pushing.
 
-- Use a conventional title, such as style: improve leaderboard filter states.
-- Select Leaderboard UI in the PR template.
-- Complete Summary, Motivation, Changes, and Testing.
-- Include at least one screenshot or video link in the PR description.
-- Keep one atomic concern and one atomic commit.
-- Keep only one open Leaderboard UI PR at a time.
-
-The validator adds leaderboard-ui and leaderboard-ui-pass to a valid
-submission. If visual evidence is missing, it leaves the PR open, adds
-needs-evidence, and posts instructions. The competition is manually reviewed:
-no Leaderboard UI PR is benchmarked or auto-merged. Maintainers select and merge
-the strongest coherent design; valid non-winning submissions stay open for a
-later update or review.
-
-Only one merged PR has the active round-winner reward at a time. When a new
-winner is labeled, automation converts every prior winner to
-past-round-winner and removes its round-winner label. The archived PR remains
-visible, but it no longer earns current competition score. leaderboard-ui-pass
-is a validation label, not a reward label.
-
-## Paused Tracks
-
-Agent Benchmark and Generation UI competitions are paused. Contributor PRs for
-agent/agent.py, the Generation page, or any other non-Leaderboard scope are
-closed by the active contributor gate. The agent implementation, winner archive,
-benchmark tooling, and historical reports remain available as reference
-material; they are not active contribution targets.
-
-Existing legacy PRs are not retroactively closed by this policy. Maintainers can
-review or close them deliberately.
-
-## Gittensor Relationship
-
-Gittensor supports the open software market Imagent is building toward. The
-current Leaderboard UI competition makes the project legible in public: people
-can see the benchmark archive, understand how prior image-agent work was
-evaluated, and improve the interface through focused GitHub pull requests.
-
-You do not need Discord access or subnet-specific knowledge to participate. The
-GitHub workflow and the public site are the source of truth for the active
-competition.
-
-## Maintainer Work
-
-Owners, members, and collaborators are excluded from contributor-track
-validation. Maintainers must still use reviewable PRs and merge them manually.
-Use maintainer PRs for infrastructure, documentation, model/runtime changes,
-agent experiments, benchmark maintenance, and changes outside the Leaderboard UI
-surface.
-
-## Local Development
-
-Install the root package and test suite:
-
-~~~bash
-python -m pip install -e ".[dev]"
+```bash
+# agent
+python -m pip install pytest
 python -m pytest
-~~~
 
-For the website:
+# engine
+python -m pip install -e "./bench[dev]" && cd bench && python -m pytest
 
-~~~bash
-cd imagent-ui
-npm ci
-npm run lint
-npm run build
-~~~
+# site
+cd web && npm ci && npm run lint && npm run build
+```
 
-Live image generation requires OPENROUTER_API_KEY. The local agent CLI and
-imagent-bench remain available for research, but no scheduled agent benchmark
-round currently runs in GitHub Actions.
+CI runs all three on every pull request.
 
-## Labels
+## Ground rules for the rebuild
 
-- leaderboard-ui: PR selected the active Leaderboard UI track.
-- leaderboard-ui-pass: PR passed the automated title, template, and file scope
-  gate.
-- needs-evidence: valid Leaderboard UI PR is missing a screenshot or video.
-- invalid-pr: PR was closed because it violates the active contributor policy.
-- duplicate-pr: contributor opened more than one active Leaderboard UI PR.
-- round-winner: the one merged PR eligible for the active winner reward.
-- past-round-winner: an archived winner with no active competition reward.
+These constraints are settled and will carry into the new competition:
+
+- Generation stays fixed to one image model. The competition measures agent
+  design, not model choice.
+- Candidate agent code is untrusted. It never runs with repository credentials
+  in scope.
+- Benchmark history and every prior incumbent stay public.
+- Scoring must be reproducible from published artifacts.
+
+## License
+
+By contributing you agree that your contributions are licensed under this
+repository's license.

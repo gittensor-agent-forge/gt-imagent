@@ -1,32 +1,13 @@
-[build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "imagent"
-version = "0.1.0"
-description = "Built-in image agent package."
-readme = "README.md"
-requires-python = ">=3.11"
-license = {text = "MIT"}
-dependencies = []
-
-[project.scripts]
-imagent = "imagent_runtime.cli:main"
-
-[project.optional-dependencies]
-dev = [
-  "pytest>=8.0.0"
-]
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-include = ["agent*", "imagent_runtime*", "winners*"]
-namespaces = true
+# Repository-wide tool configuration only.
+#
+# This file is deliberately NOT a Python distribution. Packaging lives with the
+# component that needs it:
+#
+#   bench/pyproject.toml  -> imagent-bench  (Apache-2.0), the only installable
+#   agent/                -> not packaged; loaded by path via agent/agent.yaml
+#
+# See docs/architecture.md for why the agent is loaded rather than installed.
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["agent/tests"]
 addopts = "-q"
-asyncio_default_fixture_loop_scope = "function"
