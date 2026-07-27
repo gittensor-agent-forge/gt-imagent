@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  agent:
+    name: agent
     runs-on: ubuntu-latest
 
     steps:
@@ -22,15 +23,39 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install package
-        run: |
-          python -m pip install -U pip
-          python -m pip install -e ".[dev]"
+      # The agent is stdlib-only and loaded by path, so there is nothing to
+      # install for it. pytest is the only requirement.
+      - name: Install pytest
+        run: python -m pip install -U pip pytest
 
       - name: Run tests
         run: python -m pytest
 
-  ui:
+  bench:
+    name: bench
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install bench
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e "./bench[dev]"
+
+      - name: Run tests
+        working-directory: bench
+        run: python -m pytest
+
+  web:
+    name: web
     runs-on: ubuntu-latest
 
     steps:
@@ -42,16 +67,16 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: imagent-ui/package-lock.json
+          cache-dependency-path: web/package-lock.json
 
-      - name: Install UI dependencies
-        working-directory: imagent-ui
+      - name: Install dependencies
+        working-directory: web
         run: npm ci
 
-      - name: Lint UI
-        working-directory: imagent-ui
+      - name: Lint
+        working-directory: web
         run: npm run lint
 
-      - name: Build UI
-        working-directory: imagent-ui
+      - name: Build
+        working-directory: web
         run: npm run build

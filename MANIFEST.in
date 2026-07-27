@@ -1,2 +1,0 @@
-recursive-include agent *.py *.yaml *.txt
-recursive-include winners *.py *.txt

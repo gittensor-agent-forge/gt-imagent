@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import base64
 import json
 import os
@@ -10,8 +9,6 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
-
-from imagent_runtime.agent_runtime import AgentRuntime
 
 
 DEFAULT_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/images"
@@ -26,20 +23,70 @@ class OpenRouterImageError(RuntimeError):
 class BaseImageAgent:
     """Reference image agent that calls OpenRouter Gemini Image by default.
 
-    Contributors should replace this class with stronger planning, critique, and
-    regeneration logic while keeping the public setup/generate interface stable.
+    Contributors replace this class with stronger planning, critique, and
+    regeneration logic. Only `setup` and `generate` are the contract; everything
+    else here is an implementation detail a challenger is free to discard.
+
+    The agent returns image bytes and a trace. It never writes to disk: the
+    benchmark owns persistence, so a candidate cannot influence where artifacts
+    land or what they are named.
     """
+
+    # Descriptive only. Reported in the trace so a reader can see the shape of
+    # the trajectory this agent implements.
+    trajectory = [
+        "understand_user_intent",
+        "collect_available_context",
+        "construct_generation_prompt",
+        "generate_image_with_openrouter",
+    ]
 
     def setup(self, config: dict[str, Any], workdir: Path) -> None:
         self.config = config
         self.workdir = Path(workdir).expanduser().resolve()
         self.backend_config = _image_backend_config(config)
-        self.runtime = AgentRuntime(self)
 
-    def generate(self, case: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-        if not hasattr(self, "runtime"):
+    def generate(self, case: dict[str, Any]) -> dict[str, Any]:
+        if not hasattr(self, "backend_config"):
             raise RuntimeError("agent.setup(config, workdir) must be called before generate()")
-        return self.runtime.generate(case, output_dir)
+
+        context = self._build_context(case)
+        generation_prompt = self._build_generation_prompt(case, context)
+        image_bytes, media_type, response, request = self._request_openrouter_image(generation_prompt)
+
+        usage = response.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        model = str(response.get("model") or request["model"])
+
+        return {
+            "image_bytes": image_bytes,
+            "media_type": media_type,
+            "trace": {
+                "agent": "base-openrouter-gemini",
+                "trajectory": self.trajectory,
+                "provider": "openrouter",
+                "model": model,
+                "user_prompt": str(case.get("prompt", "")),
+                "generation_prompt": generation_prompt,
+                "context": context,
+                "request": {
+                    "endpoint": str(self.backend_config.get("endpoint", DEFAULT_OPENROUTER_ENDPOINT)),
+                    "model": request.get("model"),
+                    "parameters": {
+                        key: value
+                        for key, value in request.items()
+                        if key not in {"prompt", "input_references"}
+                    },
+                },
+                "response": {"created": response.get("created"), "usage": usage},
+            },
+            "metadata": {
+                "agent_id": "base-openrouter-gemini-agent",
+                "provider": "openrouter",
+                "model": model,
+                "cost_usd": _float_or_zero(usage.get("cost")),
+            },
+        }
 
     def _request_openrouter_image(self, prompt: str) -> tuple[bytes, str, dict[str, Any], dict[str, Any]]:
         api_key_env = str(self.backend_config.get("api_key_env", DEFAULT_API_KEY_ENV))
@@ -117,19 +164,10 @@ class BaseImageAgent:
         title = (
             str(memory.get("preferred_label") or "").strip()
             or self._title_from_prompt(prompt)
-            or assets.get("title")
-            or ("Image-Agent" if facts else "")
+            or assets.get("title", "")
         )
         sections = self._sections_from_prompt(prompt) or assets.get("sections", [])
         required_text = [title, *sections, *assets.get("required_text", [])]
-        if "reason" in (case.get("allowed_tools") or []):
-            display = self._reasoning_display(prompt)
-            if display:
-                required_text.extend([display["answer"], display["display"]])
-        if "PASS" in prompt.upper():
-            required_text.append("PASS")
-        if facts:
-            required_text.extend(["Image-Agent", "context gap"])
 
         return {
             "capability": str(case.get("capability", "")),
@@ -216,17 +254,6 @@ class BaseImageAgent:
         raw = re.sub(r"\band\b", ",", match.group(1), flags=re.IGNORECASE)
         return [part.strip(" .") for part in re.split(r"[,;/|]+", raw) if part.strip(" .")]
 
-    def _reasoning_display(self, prompt: str) -> dict[str, str] | None:
-        expression = _extract_expression(prompt)
-        if not expression:
-            return None
-        try:
-            value = _safe_eval(expression)
-        except (ValueError, ZeroDivisionError):
-            return None
-        answer = _format_number(value)
-        return {"answer": answer, "display": f"{expression} = {answer}"}
-
 
 def _image_backend_config(config: dict[str, Any]) -> dict[str, Any]:
     agent_config = config.get("agent") if isinstance(config, dict) else {}
@@ -312,6 +339,13 @@ def _media_type_from_format(value: Any) -> str:
     return ""
 
 
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _dedupe(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -322,56 +356,6 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(cleaned)
     return result
-
-
-def _extract_expression(prompt: str) -> str:
-    number = r"(?:\d+(?:\.\d*)?|\.\d+)"
-    for match in re.finditer(rf"(?<![A-Za-z0-9_.])(?:{number}|\()[0-9()\s+\-*/.]*", prompt):
-        candidate = match.group(0).strip().rstrip(".")
-        if any(char.isdigit() for char in candidate) and any(op in candidate for op in "+-*/"):
-            try:
-                ast.parse(candidate, mode="eval")
-            except SyntaxError:
-                continue
-            return candidate
-    return ""
-
-
-def _safe_eval(expression: str) -> float:
-    tree = ast.parse(expression, mode="eval")
-
-    def visit(node: ast.AST) -> float:
-        if isinstance(node, ast.Expression):
-            return visit(node.body)
-        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-            return float(node.value)
-        if isinstance(node, ast.UnaryOp):
-            value = visit(node.operand)
-            if isinstance(node.op, ast.UAdd):
-                return value
-            if isinstance(node.op, ast.USub):
-                return -value
-        if isinstance(node, ast.BinOp):
-            left = visit(node.left)
-            right = visit(node.right)
-            if isinstance(node.op, ast.Add):
-                return left + right
-            if isinstance(node.op, ast.Sub):
-                return left - right
-            if isinstance(node.op, ast.Mult):
-                return left * right
-            if isinstance(node.op, ast.Div):
-                return left / right
-        raise ValueError(f"unsupported expression: {type(node).__name__}")
-
-    return visit(tree)
-
-
-def _format_number(value: float) -> str:
-    rounded = round(value)
-    if abs(value - rounded) < 1e-9:
-        return str(int(rounded))
-    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 ImageAgent = BaseImageAgent

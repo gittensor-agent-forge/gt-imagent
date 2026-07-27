@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagent-bench"
+version = "0.1.0"
+description = "Official benchmark runner and report generator for imagent agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+# The runner is deliberately stdlib-only so a challenge run has no third-party
+# supply chain between the candidate agent and the recorded score.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+imagent-bench = "imagent_bench.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+imagent_bench = ["suites/**/*.jsonl", "suites/**/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
