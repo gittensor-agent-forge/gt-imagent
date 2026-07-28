@@ -1,0 +1,81 @@
+name: Screen
+
+# Runs with a fork's untrusted code checked out, so it has NO token, NO secrets,
+# and no write permissions. It cannot label, comment, or close — by design.
+#
+# It only writes a verdict file. A separate workflow, triggered by this one's
+# completion, acts on that verdict from the base repository where the token
+# lives. Merging the two would mean holding write access beside untrusted code,
+# which is the mistake this split exists to prevent.
+
+on:
+  pull_request:
+    paths:
+      - "submissions/**"
+
+permissions:
+  contents: read
+
+env:
+  IMAGENT_BENCH_REF: v0.2.0
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned benchmark
+        run: |
+          python -m pip install -U pip
+          python -m pip install "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@${IMAGENT_BENCH_REF}"
+
+      - name: Only one submission folder may change
+        id: scope
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          echo "$changed"
+          # A challenge pull request adds one directory under submissions/ and
+          # touches nothing else, which makes the scope rule automatic rather
+          # than something a reviewer has to remember.
+          if echo "$changed" | grep -qvE '^submissions/[A-Za-z0-9_.-]+/'; then
+            echo "scope_error=a challenge PR may only add files under submissions/<name>/" >> "$GITHUB_OUTPUT"
+          elif [ "$(echo "$changed" | cut -d/ -f2 | sort -u | wc -l)" -ne 1 ]; then
+            echo "scope_error=exactly one submission folder may change" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle=$(echo "$changed" | cut -d/ -f1,2 | sort -u | head -1)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Screen
+        run: |
+          if [ -n "${{ steps.scope.outputs.scope_error }}" ]; then
+            python - <<'PY'
+          import json, os
+          json.dump({
+              "version": "imagent-verdict-1.0",
+              "pull_request": ${{ github.event.number }},
+              "author": "${{ github.event.pull_request.user.login }}",
+              "bundle_dir": "",
+              "passed": False,
+              "reasons": [os.environ["SCOPE_ERROR"]],
+          }, open("verdict.json", "w"), indent=2)
+          PY
+          else
+            python -m competition.bot screen \
+              --pr ${{ github.event.number }} \
+              --author "${{ github.event.pull_request.user.login }}" \
+              --bundle "${{ steps.scope.outputs.bundle }}" \
+              --out verdict.json
+          fi
+        env:
+          SCOPE_ERROR: ${{ steps.scope.outputs.scope_error }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screening-verdict
+          path: verdict.json

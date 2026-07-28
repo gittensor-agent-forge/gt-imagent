@@ -1,0 +1,96 @@
+name: Challenge
+
+# The duel. Scheduled rather than triggered by a pull request, because the queue
+# must run one duel at a time — a schedule makes that a property of the system
+# instead of something every trigger has to remember.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A second duel starting while one is in flight could produce two promotions,
+  # and one crown would silently overwrite the other.
+  group: imagent-challenge
+  cancel-in-progress: false
+
+env:
+  IMAGENT_BENCH_REF: v0.2.0
+
+jobs:
+  duel:
+    runs-on: ubuntu-latest
+    environment: challenge
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned benchmark
+        run: |
+          python -m pip install -U pip
+          python -m pip install "imagent-bench[scoring] @ git+https://github.com/gittensor-agent-forge/gt-imagent-bench@${IMAGENT_BENCH_REF}"
+
+      - name: Start the oldest waiting challenger
+        id: tick
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python -m competition.bot tick --out started.json
+          echo "started=$(python -c 'import json;print(json.load(open("started.json"))["started"] or "")')" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the challenger's bundle
+        if: steps.tick.outputs.started != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr checkout ${{ steps.tick.outputs.started }} --branch challenger
+
+      - name: Run the duel
+        if: steps.tick.outputs.started != ''
+        env:
+          # The room holds every miner's sealed key. We hold only the shared
+          # secret that authenticates /run — no provider key appears here.
+          KATA_ROOM_URL: ${{ secrets.KATA_ROOM_URL }}
+          KATA_ROOM_AUTH_SECRET: ${{ secrets.KATA_ROOM_AUTH_SECRET }}
+          IMAGENT_ROOM_MEASUREMENT: ${{ vars.IMAGENT_ROOM_MEASUREMENT }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python scripts/run_challenge.py --pr ${{ steps.tick.outputs.started }}
+
+      - name: Publish the report
+        if: steps.tick.outputs.started != '' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: challenge-${{ steps.tick.outputs.started }}
+          path: challenge-output/
+
+      # Crown, announce, merge or close. Runs even when the duel failed, because
+      # an aborted challenge still has to put the challenger back in the queue
+      # rather than leaving it labelled `running` forever.
+      - name: Resolve
+        if: steps.tick.outputs.started != '' && always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python -m competition.bot resolve --outcome challenge-output/outcome.json
+
+      - name: Commit the new crown
+        if: steps.tick.outputs.started != '' && always()
+        run: |
+          if git diff --quiet kings; then exit 0; fi
+          git config user.name "imagent-bot"
+          git config user.email "imagent-bot@users.noreply.github.com"
+          git checkout main
+          git add kings
+          git commit -m "feat(king): crown challenger from #${{ steps.tick.outputs.started }}"
+          git push

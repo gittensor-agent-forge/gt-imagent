@@ -1,114 +1,113 @@
 # Imagent
 
-Imagent is an open research project for image-generation agents. Its core idea is
-simple: image generation should be more than a one-shot prompt call. A strong
-agent should understand intent, plan, use context, generate, critique, and
-improve while the image model remains one component in a larger system.
+An open king-of-the-hill competition for image-generation agents.
 
-**This is the competition repository.** It holds the agent that competes and the
-rules it competes under.
+Every competitor uses **the same image model**. The only thing that differs is
+the agent code, so a win measures agent design and nothing else.
+
+**This is the competition repository.** It holds the reigning agent, the rules it
+competes under, and the machinery that decides who wears the crown.
 
 ## The three repositories
 
-| Repository | Role |
+| Repository | Answers |
 |---|---|
-| **gt-imagent** (here) | The king-of-the-hill competition and the reigning agent |
-| [gt-imagent-bench](https://github.com/gittensor-agent-forge/gt-imagent-bench) | The engine: loads an agent, runs it over a suite, scores it, emits reports |
-| [gt-imagent-ui](https://github.com/gittensor-agent-forge/gt-imagent-ui) | The dashboard: public leaderboard, benchmark reports, whitepaper |
+| **gt-imagent** (here) | *Who competes, when, and who is king?* |
+| [gt-imagent-bench](https://github.com/gittensor-agent-forge/gt-imagent-bench) | *Given an image and a problem, how good is it?* |
+| [gt-imagent-tee](https://github.com/gittensor-agent-forge/gt-imagent-tee) | *How does a miner's agent run without anyone trusting it?* |
 
-The engine is consumed here as a **pinned git tag**, so a challenge is always
-judged by a known version of the scorer. The pin lives in
-`.github/workflows/ci.yml` as `IMAGENT_BENCH_REF`.
-
-## Current Status
-
-**The workflow is being rebuilt around a king-of-the-hill competition**, where a
-challenger must beat the reigning agent head to head on the same problems. The
-design is in [`docs/competition.md`](./docs/competition.md); it is a proposal and
-is not implemented yet.
-
-There is no open contribution track right now.
-
-## Why This Exists
-
-Modern image models are powerful, but prompt-to-image generation still struggles
-with complex instructions, context-heavy requests, consistency, exact text, and
-self-correction. Imagent treats those weaknesses as an agent-design problem.
-
-The long-term research question remains:
-
-Can better planning, orchestration, context use, and verification make the same
-image model produce better results?
-
-Generation is fixed to one model so results measure the agent, not the model.
+The split is by question, not by convenience. The benchmark never knows what a
+crown is. The competition never decides how good an image is. The sealed room
+never decides anything at all — it runs an agent and attests what happened.
 
 ## Layout
 
 ```
 gt-imagent/
-├── agent/    the agent under competition   → agent/README.md
-├── docs/     architecture, contracts, competition design
-└── .github/  CI
+├── kings/          the crown
+│   ├── current.json   who reigns, and how many challenges they have survived
+│   └── current/       the winning agent's code, copied in full
+├── submissions/    challenger bundles, one directory per challenge
+├── competition/    the machinery
+│   ├── screening.py   free checks, before a single credit is spent
+│   ├── challenge.py   issue → run → verify → grade → decide → publish
+│   ├── room_client.py talks to the sealed room
+│   ├── promotion.py   does a run of verdicts add up to a new king?
+│   ├── status.py      the crown, the queue, the standings
+│   ├── ranking.py     Bradley-Terry standings with confidence intervals
+│   ├── publishing.py  the published challenge report
+│   ├── lifecycle.py   the label state machine
+│   └── github.py      the only part that touches GitHub
+├── docs/
+└── .github/workflows/
 ```
 
-Two things are worth knowing before you move anything:
+Two Python surfaces live here and they are deliberately different:
 
-- **`agent/agent.yaml` is a protocol path**, hardcoded in the engine's loader.
-  Every candidate depends on it.
-- **The repository root is not a Python package.** The root `pyproject.toml`
-  carries tool configuration only. The agent is stdlib-only and is loaded by
-  path, never installed.
+- **`kings/current/`** is the reigning agent: stdlib-only, **loaded by path** by
+  the sealed room, never installed. It is a full copy of the winning bundle, so
+  a challenger forks exactly the bytes it has to beat.
+- **`competition/`** is an ordinary installable package that depends on the
+  benchmark.
 
-Start with [`docs/architecture.md`](./docs/architecture.md), then
-[`docs/submission-contract.md`](./docs/submission-contract.md) for what the
-engine requires of an agent, then [`docs/competition.md`](./docs/competition.md)
-for where this is going.
+## How a challenge works
 
-## Built Through Gittensor
+```
+miner seals their provider key to the room, locally
+              │
+   PR adds submissions/<user>-<date>-<nn>/
+              │
+        free screening ──── fail ──▶ challenger:invalid, closed, $0 spent
+              │ pass
+        challenger:pending
+              │  (oldest first, one duel at a time)
+        challenger:running
+              │
+   challenge_id → seed → 7 fresh problems
+              │
+   king, challenger, and a no-agent baseline each answer all 7
+   inside the sealed room, model pinned, 4 calls per problem
+              │
+   attestation verified: measurement, quote, nonce, every image hash
+              │
+   graded: validity → facts → blind pairwise judge → the ladder
+              │
+   wins − losses ≥ 2  AND  no regression on the objective checks?
+        │                              │
+       yes                            no
+        │                              │
+   crowned, merged                challenger:defeated, closed
+   old king requeued for one rematch
+```
 
-Imagent is being built through Gittensor, which supports the open contributor
-market this project is building toward: code, benchmark history, and design work
-remain public, reviewable, and reusable.
+Ties count for the king. A dethroned king is automatically requeued for one
+immediate rematch, which corrects a lucky promotion far more cheaply than buying
+a larger duel every time.
 
-## Local Development
+## Status
 
-`pip` may not exist on your machine; `uv` works either way.
+The design is in [`docs/build-plan.md`](./docs/build-plan.md). The machinery is
+built and tested; the benchmark's local model backends (object detector, OCR,
+preference models) are the remaining gap, so no challenge has yet been run
+against real images.
+
+## Development
 
 ```bash
 uv venv .venv --python 3.12
 VIRTUAL_ENV=.venv uv pip install pytest
+VIRTUAL_ENV=.venv uv pip install -e ../gt-imagent-bench
 
-# agent tests
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest        # competition machinery + the crowned agent
 ```
 
-To run or score the agent you also need the engine:
+## Design principles
 
-```bash
-VIRTUAL_ENV=.venv uv pip install \
-  "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@v0.1.0"
-
-export OPENROUTER_API_KEY=your-openrouter-api-key
-
-# one ad-hoc prompt → results/<UTC datetime>/
-.venv/bin/imagent-bench try "Create a polished benchmark badge titled CLI PASS."
-
-# a full scored run against this repository's agent
-.venv/bin/imagent-bench run \
-  --repository . \
-  --config <path-to-bench-checkout>/configs/openrouter-vision-benchmark.json \
-  --output-dir benchmark-output \
-  --fail-on-policy
-```
-
-Only `try` and `run` need an API key and spend real credits. Tests do not.
-
-## Design Principles
-
-- Keep the base agent easy to understand.
-- Make competition rules explicit, enforceable, and hard to game.
-- Score the agent, not the image model — generation stays fixed.
-- Preserve benchmark history and every prior incumbent.
-- Never run untrusted candidate code with credentials in scope.
-- Prefer transparent research artifacts over hidden leaderboard tricks.
-- Build toward open, Gittensor-compatible image-agent research.
+- Score the agent, not the image model — generation stays fixed, enforced in the
+  sealed room rather than by honour.
+- Objective facts decide first; taste only breaks close calls.
+- Infrastructure failures never count against a miner.
+- Miners pay for their own inference; the validator pays for judging, because
+  whoever pays the judge controls the judge.
+- Every reign, every report, and every match stays public.
+- Publish uncertainty, not just rank.
