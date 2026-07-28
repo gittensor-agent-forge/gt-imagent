@@ -1,0 +1,6 @@
+# The reigning agent's manifest. `entrypoint` is the only field the room's
+# loader requires, and it must be `module:attribute`.
+id: reference-agent
+name: Reference Agent
+version: 1.0.0
+entrypoint: agent:ImageAgent

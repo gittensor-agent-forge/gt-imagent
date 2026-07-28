@@ -9,62 +9,75 @@ permissions:
   contents: read
 
 env:
-  # The engine is pinned by tag so a challenge is always judged by a known
-  # version. Bump this deliberately, never automatically.
-  IMAGENT_BENCH_REF: v0.1.0
+  IMAGENT_BENCH_REF: v0.2.0
 
 jobs:
+  # Job names are load-bearing: the repository ruleset requires status checks
+  # called `agent` and `contract`. Renaming either silently makes every pull
+  # request unmergeable, because the missing check never reports.
   agent:
     name: agent
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
-      # The agent is stdlib-only and loaded by path, so pytest is all it needs.
-      - name: Install pytest
-        run: python -m pip install -U pip pytest
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          # The benchmark is a pinned dependency: a challenge is always judged
+          # by a known version.
+          python -m pip install "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@${IMAGENT_BENCH_REF}"
+          python -m pip install pytest
 
+      # The competition machinery and the crowned agent, which is loaded by path
+      # exactly as the sealed room loads it.
       - name: Run tests
         run: python -m pytest
 
   contract:
     name: contract
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
-      - name: Install the pinned engine
-        run: |
-          python -m pip install -U pip
-          python -m pip install "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@${IMAGENT_BENCH_REF}"
-
-      # Proves this repository still satisfies the submission contract: the
-      # manifest parses and the declared entrypoint imports. No network, no
-      # credits spent.
-      - name: Verify the agent loads
+      # Proves the crowned agent still satisfies what the sealed room expects:
+      # the manifest parses, and the declared entrypoint imports and exposes the
+      # interface. A crown that cannot be loaded would otherwise surface only
+      # when a challenger arrived, which is the worst possible moment.
+      - name: The crowned agent loads
         run: |
           python - <<'PY'
+          import importlib
+          import sys
           from pathlib import Path
-          from imagent_bench.agent_loader import load_agent
 
-          agent, manifest = load_agent(Path("."))
+          king = Path("kings/current")
+          manifest = king / "agent.yaml"
+          assert manifest.is_file(), "kings/current/agent.yaml is missing"
+
+          entrypoint = ""
+          for line in manifest.read_text(encoding="utf-8").splitlines():
+              if line.startswith(" ") or ":" not in line or line.lstrip().startswith("#"):
+                  continue
+              key, value = line.split(":", 1)
+              if key.strip() == "entrypoint":
+                  entrypoint = value.strip().strip("'\"")
+          assert ":" in entrypoint, f"entrypoint must be module:attribute, got {entrypoint!r}"
+
+          module_name, attribute = entrypoint.split(":", 1)
+          sys.path.insert(0, str(king))
+          agent = getattr(importlib.import_module(module_name.strip()), attribute.strip())()
           assert hasattr(agent, "setup"), "agent is missing setup()"
           assert hasattr(agent, "generate"), "agent is missing generate()"
-          print(f"loaded {manifest.get('name')} via {manifest.get('entrypoint')}")
+          print(f"crowned agent loads via {entrypoint}")
           PY

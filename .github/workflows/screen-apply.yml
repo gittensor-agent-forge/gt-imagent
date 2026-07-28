@@ -1,0 +1,45 @@
+name: Screen (apply)
+
+# The trusted half. Runs in the base repository with a write token, triggered by
+# the untrusted screening job finishing. It downloads the verdict and acts on it.
+#
+# It deliberately does NOT check out the pull request. Nothing from the fork is
+# ever executed here — only a small JSON file is read.
+
+on:
+  workflow_run:
+    workflows: ["Screen"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      # The base repository's own code, not the pull request's.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned benchmark
+        run: |
+          python -m pip install -U pip
+          python -m pip install "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@v0.2.0"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: screening-verdict
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label, comment, and close if rejected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python -m competition.bot apply --verdict verdict.json

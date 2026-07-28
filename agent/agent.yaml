@@ -1,6 +1,0 @@
-# Agent manifest. The loader reads top-level scalar keys only; `entrypoint` is
-# the one field it requires.
-id: image-agent
-name: Image Agent
-version: 0.1.0
-entrypoint: agent.agent:ImageAgent
