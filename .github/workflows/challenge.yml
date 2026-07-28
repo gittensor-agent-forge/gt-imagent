@@ -5,6 +5,9 @@ name: Challenge
 # instead of something every trigger has to remember.
 
 on:
+  # Duels normally start the moment a challenger passes screening, dispatched by
+  # the Screen (apply) workflow. The schedule is only a safety net: it recovers a
+  # queue that stalled because a dispatch was missed or a run died.
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -19,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGENT_BENCH_REF: v0.2.0
+  IMAGENT_BENCH_REF: v0.3.0
 
 jobs:
   duel:
@@ -83,6 +86,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python -m competition.bot resolve --outcome challenge-output/outcome.json
+
+      # Keep the queue moving. Without this the next waiting challenger would sit
+      # until the safety-net schedule fired, even though the duel just ended.
+      - name: Start the next duel if one is waiting
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python -m competition.bot tick --dry-run --out next.json
+          if [ "$(python -c 'import json;print(json.load(open("next.json"))["started"] or "")')" != "" ]; then
+            gh workflow run challenge.yml --repo "${{ github.repository }}"
+          fi
 
       - name: Commit the new crown
         if: steps.tick.outputs.started != '' && always()
