@@ -1,12 +1,10 @@
 # Repository-wide tool configuration only.
 #
-# This file is deliberately NOT a Python distribution. Packaging lives with the
-# component that needs it:
+# This file is deliberately NOT a Python distribution. The agent is stdlib-only
+# and loaded by path via agent/agent.yaml, never installed.
 #
-#   bench/pyproject.toml  -> imagent-bench  (Apache-2.0), the only installable
-#   agent/                -> not packaged; loaded by path via agent/agent.yaml
-#
-# See docs/architecture.md for why the agent is loaded rather than installed.
+# The scoring engine lives in its own repository, gt-imagent-bench, and is
+# consumed here as a pinned git tag. See docs/architecture.md.
 
 [tool.pytest.ini_options]
 testpaths = ["agent/tests"]

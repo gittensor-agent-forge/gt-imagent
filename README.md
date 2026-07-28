@@ -5,16 +5,29 @@ simple: image generation should be more than a one-shot prompt call. A strong
 agent should understand intent, plan, use context, generate, critique, and
 improve while the image model remains one component in a larger system.
 
+**This is the competition repository.** It holds the agent that competes and the
+rules it competes under.
+
+## The three repositories
+
+| Repository | Role |
+|---|---|
+| **gt-imagent** (here) | The king-of-the-hill competition and the reigning agent |
+| [gt-imagent-bench](https://github.com/gittensor-agent-forge/gt-imagent-bench) | The engine: loads an agent, runs it over a suite, scores it, emits reports |
+| [gt-imagent-ui](https://github.com/gittensor-agent-forge/gt-imagent-ui) | The dashboard: public leaderboard, benchmark reports, whitepaper |
+
+The engine is consumed here as a **pinned git tag**, so a challenge is always
+judged by a known version of the scorer. The pin lives in
+`.github/workflows/ci.yml` as `IMAGENT_BENCH_REF`.
+
 ## Current Status
 
-**The workflow is being rebuilt around a king-of-the-hill competition.** The
-previous contribution tracks — Agent Benchmark rounds, Generation UI, and
-Leaderboard UI — have been removed along with their automation, labels, and
-templates.
+**The workflow is being rebuilt around a king-of-the-hill competition**, where a
+challenger must beat the reigning agent head to head on the same problems. The
+design is in [`docs/competition.md`](./docs/competition.md); it is a proposal and
+is not implemented yet.
 
-There is no open contribution track right now. The reference agent, the benchmark
-engine, and the public site remain in place as the foundation the new competition
-will be built on.
+There is no open contribution track right now.
 
 ## Why This Exists
 
@@ -29,36 +42,27 @@ image model produce better results?
 
 Generation is fixed to one model so results measure the agent, not the model.
 
-## Repository Layout
+## Layout
 
 ```
 gt-imagent/
-├── agent/    the image agent under competition   → agent/README.md
-├── bench/    the engine that runs and scores it  → bench/README.md
-├── web/      public site and leaderboard         → web/README.md
-├── docs/     architecture and contracts          → docs/architecture.md
+├── agent/    the agent under competition   → agent/README.md
+├── docs/     architecture, contracts, competition design
 └── .github/  CI
 ```
 
-Each component is self-contained: its own README, its own tests, and its own
-packaging where it is a distributable. The dependency direction is strictly
-one-way — `bench` loads `agent`, and `web` only ever reads report JSON.
-
-The split is by **who owns the result**: an agent returns image bytes and a
-trace, and the engine decides where artifacts land, how long the call took, and
-whether it passed.
-
 Two things are worth knowing before you move anything:
 
-- **`agent/agent.yaml` is a protocol path**, hardcoded in the benchmark's agent
-  loader. Every candidate depends on it.
+- **`agent/agent.yaml` is a protocol path**, hardcoded in the engine's loader.
+  Every candidate depends on it.
 - **The repository root is not a Python package.** The root `pyproject.toml`
-  carries tool configuration only. `bench/` is the only installable and carries
-  its own Apache-2.0 licence; the rest of the repository is MIT.
+  carries tool configuration only. The agent is stdlib-only and is loaded by
+  path, never installed.
 
-See [`docs/architecture.md`](./docs/architecture.md) for the full picture and
+Start with [`docs/architecture.md`](./docs/architecture.md), then
 [`docs/submission-contract.md`](./docs/submission-contract.md) for what the
-benchmark requires of an agent.
+engine requires of an agent, then [`docs/competition.md`](./docs/competition.md)
+for where this is going.
 
 ## Built Through Gittensor
 
@@ -68,46 +72,36 @@ remain public, reviewable, and reusable.
 
 ## Local Development
 
+`pip` may not exist on your machine; `uv` works either way.
+
 ```bash
-# agent (stdlib only, loaded by path — nothing to install)
-python -m pip install pytest
-python -m pytest
+uv venv .venv --python 3.12
+VIRTUAL_ENV=.venv uv pip install pytest
 
-# engine
-python -m pip install -e "./bench[dev]"
-cd bench && python -m pytest
-
-# public site
-cd web && npm ci && npm run lint && npm run build
+# agent tests
+.venv/bin/python -m pytest
 ```
 
-CI runs all three on every pull request.
-
-## Running the Agent
-
-Live generation uses OpenRouter and the project-standard Gemini 3.1 Flash Image
-model.
+To run or score the agent you also need the engine:
 
 ```bash
-python -m pip install -e ./bench
+VIRTUAL_ENV=.venv uv pip install \
+  "git+https://github.com/gittensor-agent-forge/gt-imagent-bench@v0.1.0"
+
 export OPENROUTER_API_KEY=your-openrouter-api-key
 
-# one ad-hoc prompt
-imagent-bench try "Create a polished benchmark badge titled CLI PASS."
+# one ad-hoc prompt → results/<UTC datetime>/
+.venv/bin/imagent-bench try "Create a polished benchmark badge titled CLI PASS."
 
-# a full scored run
-imagent-bench run \
+# a full scored run against this repository's agent
+.venv/bin/imagent-bench run \
   --repository . \
-  --config bench/configs/openrouter-vision-benchmark.json \
+  --config <path-to-bench-checkout>/configs/openrouter-vision-benchmark.json \
   --output-dir benchmark-output \
   --fail-on-policy
 ```
 
-The agent fails clearly when OpenRouter is not configured; there is no mock
-renderer.
-
-See [`bench/README.md`](./bench/README.md) for the configuration matrix, the
-report contract, and current known issues with the scoring gate.
+Only `try` and `run` need an API key and spend real credits. Tests do not.
 
 ## Design Principles
 
