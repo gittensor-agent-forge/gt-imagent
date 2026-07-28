@@ -24,18 +24,18 @@ If you do open a PR:
 - Run the checks below before pushing.
 
 ```bash
-# agent
-python -m pip install pytest
-python -m pytest
-
-# engine
-python -m pip install -e "./bench[dev]" && cd bench && python -m pytest
-
-# site
-cd web && npm ci && npm run lint && npm run build
+uv venv .venv --python 3.12
+VIRTUAL_ENV=.venv uv pip install pytest
+.venv/bin/python -m pytest
 ```
 
-CI runs all three on every pull request.
+CI also verifies the agent still satisfies the submission contract by loading it
+with the pinned engine.
+
+The scoring engine and the dashboard live in their own repositories:
+
+- [gt-imagent-bench](https://github.com/gittensor-agent-forge/gt-imagent-bench)
+- [gt-imagent-ui](https://github.com/gittensor-agent-forge/gt-imagent-ui)
 
 ## Ground rules for the rebuild
 

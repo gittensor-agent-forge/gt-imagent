@@ -99,7 +99,8 @@ config's `policy.minimum_score` when the case declares no floor of its own.
 
 ## Open items for the king-of-the-hill rebuild
 
-Known gaps, recorded so the rebuild does not rediscover them:
+Addressed by the design in [`competition.md`](./competition.md). Recorded here so
+the gaps stay visible until the code closes them.
 
 1. **The suite is public and static.** `openrouter_vision_v1` ships committed
    cases, which is memorizable. Challenges need secret or freshly generated
@@ -113,3 +114,8 @@ Known gaps, recorded so the rebuild does not rediscover them:
    bytes-in/bytes-out interface above is the precondition for adding one.
 5. **No anti-cheat screening.** Nothing rejects a no-op agent, a constant output,
    or a replayed answer.
+6. **The fixed-model rule is unenforced.** A candidate is arbitrary code holding
+   the API key, so it can call any model, and the model recorded in the report is
+   the one the agent reports about itself. The fairness claim is honour-system.
+7. **A held-out suite would leak immediately.** Reports carry `prompt` per case
+   and the dashboard renders it, so publishing a report publishes the problems.
