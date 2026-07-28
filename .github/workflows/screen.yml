@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  IMAGENT_BENCH_REF: v0.2.0
+  IMAGENT_BENCH_REF: v0.3.0
 
 jobs:
   screen:

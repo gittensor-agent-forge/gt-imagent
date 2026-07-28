@@ -10,10 +10,13 @@ second call fixing the result if the first one came back unusable.
 
 Two rules the sealed room enforces, so you do not have to implement them:
 
-  * You never see an API key. Post to ``case["inference_api"]`` instead. The
-    token in that URL carries this problem's generation budget.
-  * You never choose the model. Whatever you ask for is rewritten to the pinned
-    one, and asking for something else is recorded and disqualifies the run.
+  * You never see an API key. Post to ``case["inference_api"]`` to generate, and
+    to ``case["reason_api"]`` to look at what you generated and think about it.
+    Each carries its own per-problem budget.
+  * You never choose either model. Whatever you ask for is rewritten to the
+    pinned one, and asking for something else is recorded and disqualifies the run.
+  * You never choose the seed. Both competitors get the same one, so a duel
+    measures the agent rather than who drew the luckier sample.
 
 Stdlib only. Nothing else is installed in the agent container.
 """
@@ -49,24 +52,101 @@ class ImageAgent:
         endpoint = str(case.get("inference_api", "")).strip()
         if not endpoint:
             raise RuntimeError("case is missing inference_api; the room did not budget this problem")
+        reason_endpoint = str(case.get("reason_api", "")).strip()
 
         prompt = str(case.get("prompt", "")).strip()
         plan = self.plan(prompt)
         instruction = self.compose(prompt, plan)
 
+        best: tuple[bytes, str] | None = None
+        trace: dict[str, Any] = {"plan": plan, "attempts": []}
         last_error = ""
+
         for attempt in range(MAX_ATTEMPTS):
             try:
-                payload = self._request(endpoint, instruction)
-                image, media_type = self._decode(payload)
-                return {"image_bytes": image, "media_type": media_type, "trace": {"plan": plan}}
+                image, media_type = self._decode(self._request(endpoint, instruction))
             except RuntimeError as error:
                 last_error = str(error)
-                # One retry, with the instruction sharpened rather than repeated.
-                # Sending the identical prompt again mostly buys the same failure.
-                instruction = f"{instruction}\nThe previous attempt failed. Render a clean, complete image."
+                trace["attempts"].append({"error": last_error})
+                instruction += "\nThe previous attempt failed. Render a clean, complete image."
+                continue
 
-        raise RuntimeError(f"no usable image after {MAX_ATTEMPTS} attempts: {last_error}")
+            best = (image, media_type)
+            # Look at what came back. Accepting the first image without checking
+            # is what separates a prompt wrapper from an agent.
+            verdict = self._critique(reason_endpoint, prompt, plan, image, media_type)
+            trace["attempts"].append(verdict)
+            if verdict.get("satisfied", True):
+                break
+            instruction = self.compose(prompt, plan, fix=str(verdict.get("fix", "")))
+
+        if best is None:
+            raise RuntimeError(f"no usable image after {MAX_ATTEMPTS} attempts: {last_error}")
+        return {"image_bytes": best[0], "media_type": best[1], "trace": trace}
+
+    def _critique(
+        self, endpoint: str, prompt: str, plan: dict[str, Any], image: bytes, media_type: str
+    ) -> dict[str, Any]:
+        """Ask the reasoning model whether the image actually satisfies the request.
+
+        A failure here is not fatal: it means this attempt goes unchecked, which
+        is worse than checking but far better than losing the image.
+        """
+        if not endpoint:
+            return {"satisfied": True, "reason": "no reasoning endpoint available"}
+
+        wanted = []
+        if plan["counts"]:
+            wanted += [f"exactly {number} {noun}" for noun, number in plan["counts"]]
+        if plan["quoted_text"]:
+            wanted += [f'the text "{text}" spelled correctly' for text in plan["quoted_text"]]
+        if plan["relations"]:
+            wanted += [f"the arrangement {phrase}" for phrase in plan["relations"]]
+
+        question = (
+            "Does this image satisfy the request? Check each requirement.\n"
+            f"Request: {prompt}\n"
+            + ("Requirements: " + "; ".join(wanted) + "\n" if wanted else "")
+            + 'Reply with JSON only: {"satisfied": true|false, "fix": "one short instruction"}'
+        )
+        payload = {
+            "model": "",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": question},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{media_type};base64,"
+                                + base64.b64encode(image).decode("ascii")
+                            },
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 200,
+        }
+        try:
+            request = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                answer = json.loads(response.read().decode("utf-8"))
+            content = answer["choices"][0]["message"]["content"].strip()
+            if content.startswith("```"):
+                content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content)
+            parsed = json.loads(content)
+            return {
+                "satisfied": bool(parsed.get("satisfied", True)),
+                "fix": str(parsed.get("fix", ""))[:200],
+            }
+        except Exception as error:  # noqa: BLE001 - an unchecked attempt beats a lost one
+            return {"satisfied": True, "reason": f"critique unavailable: {error}"[:200]}
 
     # --- the part worth improving -------------------------------------------
 
@@ -88,7 +168,7 @@ class ImageAgent:
             ],
         }
 
-    def compose(self, prompt: str, plan: dict[str, Any]) -> str:
+    def compose(self, prompt: str, plan: dict[str, Any], fix: str = "") -> str:
         lines = [
             "Create one photorealistic image that follows this request exactly.",
             f"Request: {prompt}",
@@ -111,6 +191,10 @@ class ImageAgent:
             "Include every named object. Do not add objects that were not asked for. "
             "Avoid duplicated or misspelled text, clutter, and cropped subjects."
         )
+        if fix:
+            # What the critique said was wrong, stated as an instruction rather
+            # than a complaint.
+            lines.append(f"The previous attempt was wrong. Correct it: {fix}")
         return "\n".join(lines)
 
     def _counts(self, prompt: str) -> list[tuple[str, int]]:

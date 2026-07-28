@@ -29,36 +29,58 @@ OUTPUT = Path("challenge-output")
 
 
 def build_scoring_stack() -> ScoringStack:
-    """Assemble the graders, or say precisely which one is missing.
+    """Assemble the graders.
 
-    A missing backend must never become a silent free pass, so this refuses to
-    build a partial stack rather than scoring against whichever checks happen to
-    be available.
+    Object checks prefer a local detector, because its answers are deterministic
+    and anyone holding the image can re-derive them. Where no detector is
+    installed, a vision model answers the same questions and every result it
+    produces is flagged non-deterministic in the published report.
+
+    OCR has no such fallback: reading text is exactly the thing a vision model is
+    least reliable at, and a text-rendering score nobody can reproduce is worse
+    than no text-rendering score. If it is missing, that is an abort.
     """
-    from imagent_scoring.openrouter import OpenRouterPairwiseJudge, OpenRouterVqa
+    from imagent_scoring.openrouter import (
+        OpenRouterObjectVerifier,
+        OpenRouterPairwiseJudge,
+        OpenRouterVqa,
+    )
     from imagent_scoring.pillow_loader import PillowImageLoader
 
-    missing = [
-        name
-        for name, available in (
-            ("object detector + colour classifier", False),
-            ("OCR engine", False),
-        )
-        if not available
-    ]
-    if missing:
+    detector = _optional_detector()
+    ocr = _optional_ocr()
+    if ocr is None:
         raise ChallengeAborted(
-            "the scoring stack is incomplete: " + ", ".join(missing) + ". "
-            "Every GenEval and text-rendering problem needs these, and scoring "
-            "without them would grade a candidate on whichever checks happen to "
-            "be installed."
+            "no OCR engine is installed, so text-rendering problems cannot be graded "
+            "reproducibly. Install pytesseract (or set IMAGENT_ALLOW_NO_OCR=1 to drop "
+            "text problems from the pool)."
         )
 
     return ScoringStack(
         loader=PillowImageLoader(),
+        ocr=ocr,
+        detector=detector,
+        verifier=None if detector else OpenRouterObjectVerifier(),
         vqa=OpenRouterVqa(),
         judge=OpenRouterPairwiseJudge(),
     )
+
+
+def _optional_detector():
+    """A local object detector, if this machine has one."""
+    try:
+        from imagent_scoring.local_detector import LocalObjectDetector
+    except ImportError:
+        return None
+    return LocalObjectDetector()
+
+
+def _optional_ocr():
+    try:
+        from imagent_scoring.local_ocr import TesseractOcr
+    except ImportError:
+        return None
+    return TesseractOcr()
 
 
 def main(argv: list[str] | None = None) -> int:

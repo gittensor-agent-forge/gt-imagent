@@ -69,6 +69,9 @@ class ScoringStack:
     loader: Any
     ocr: Any = None
     detector: Any = None
+    # Used only when no detector is installed. Its results are marked
+    # non-deterministic wherever they appear.
+    verifier: Any = None
     vqa: Any = None
     judge: Any = None
 
@@ -166,6 +169,7 @@ def grade_side(
             loader=stack.loader,
             ocr=stack.ocr,
             detector=stack.detector,
+            verifier=stack.verifier,
             vqa=stack.vqa,
         )
         fact_reports[problem.problem_id] = report.to_dict()
