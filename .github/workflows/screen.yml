@@ -11,7 +11,10 @@ name: Screen
 on:
   pull_request:
     paths:
-      - "submissions/**"
+      # Only a submission DIRECTORY, never a loose file. Without the `*/` an
+      # ordinary PR touching submissions/README.md would be screened as if it
+      # were a challenge, and rejected for having the wrong shape.
+      - "submissions/*/**"
 
 permissions:
   contents: read
@@ -24,6 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A shallow clone has no merge base, so the three-dot diff below cannot
+          # work against it.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -37,7 +44,7 @@ jobs:
       - name: Only one submission folder may change
         id: scope
         run: |
-          git fetch --depth=1 origin "${{ github.base_ref }}"
+          git fetch origin "${{ github.base_ref }}"
           changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
           echo "$changed"
           # A challenge pull request adds one directory under submissions/ and
