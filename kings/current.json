@@ -1,0 +1,11 @@
+{
+  "agent_id": "reference-agent",
+  "challenges": [
+    "genesis"
+  ],
+  "commit_sha": "05d322cfa4fc3c39dc36749a7e7f4e699876d755",
+  "crowned_at": "2026-07-28T17:23:11.355092Z",
+  "defenses": 0,
+  "schema_version": "imagent-king-1.0",
+  "submission": 0
+}
