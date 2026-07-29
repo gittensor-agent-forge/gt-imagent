@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGENT_BENCH_REF: v0.3.0
+  IMAGENT_BENCH_REF: v0.3.1
 
 jobs:
   duel:
@@ -99,6 +99,26 @@ jobs:
           if [ "$(python -c 'import json;print(json.load(open("next.json"))["started"] or "")')" != "" ]; then
             gh workflow run challenge.yml --repo "${{ github.repository }}"
           fi
+
+      # A sealed credential is bound to the hash of the bundle it ships with, so
+      # installing a new king invalidates the old king's. Re-seal against the new
+      # bundle, or the next defence aborts before it starts.
+      - name: Re-seal the project credential for the new king
+        if: steps.tick.outputs.started != '' && success() && hashFiles('kings/current/agent.yaml') != ''
+        env:
+          IMAGENT_PROVIDER_KEY: ${{ secrets.IMAGENT_PROJECT_PROVIDER_KEY }}
+          KATA_ROOM_URL: ${{ secrets.KATA_ROOM_URL }}
+          IMAGENT_ROOM_MEASUREMENT: ${{ vars.IMAGENT_ROOM_MEASUREMENT }}
+        run: |
+          if git diff --quiet kings/current; then exit 0; fi
+          python -m pip install eciespy
+          curl -fsSL -o imagent_seal.py \
+            https://raw.githubusercontent.com/gittensor-agent-forge/gt-imagent-tee/main/imagent_seal.py
+          python imagent_seal.py \
+            --room "$KATA_ROOM_URL" \
+            --bundle kings/current \
+            --measurement "$IMAGENT_ROOM_MEASUREMENT"
+          rm -f imagent_seal.py
 
       - name: Commit the new crown
         if: steps.tick.outputs.started != '' && always()

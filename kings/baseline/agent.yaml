@@ -1,0 +1,6 @@
+# The control condition. Not a competitor — it exists to answer one question:
+# does an agent beat a plain prompt to the same model?
+id: direct-baseline
+name: Direct Baseline
+version: 1.0.0
+entrypoint: agent:ImageAgent
