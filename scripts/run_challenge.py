@@ -26,6 +26,13 @@ from competition.room_client import AgentSubmission, SealedRoomClient  # noqa: E
 from competition.status import load_king  # noqa: E402
 
 OUTPUT = Path("challenge-output")
+KING_DIR = Path("kings/current")
+BASELINE_DIR = Path("kings/baseline")
+BASELINE_ID = "direct-baseline"
+# The project funds the king's defences and the control. A sealed credential is
+# bound to the hash of the bundle it ships with, so these are per-bundle files —
+# one ciphertext cannot serve two different bundles.
+SEALED_FILENAME = "sealed_inference_key"
 
 
 def build_scoring_stack() -> ScoringStack:
@@ -50,11 +57,17 @@ def build_scoring_stack() -> ScoringStack:
     detector = _optional_detector()
     ocr = _optional_ocr()
     if ocr is None:
-        raise ChallengeAborted(
-            "no OCR engine is installed, so text-rendering problems cannot be graded "
-            "reproducibly. Install pytesseract (or set IMAGENT_ALLOW_NO_OCR=1 to drop "
-            "text problems from the pool)."
-        )
+        if os.environ.get("IMAGENT_ALLOW_NO_OCR", "").strip() not in ("1", "true", "yes"):
+            raise ChallengeAborted(
+                "no OCR engine is installed, so text-rendering problems cannot be graded "
+                "reproducibly. Install pytesseract and the tesseract binary, or set "
+                "IMAGENT_ALLOW_NO_OCR=1 to fall back to a vision model — which is fine "
+                "for smoke-testing a deployment and not fine for deciding a crown."
+            )
+        from imagent_scoring.openrouter import OpenRouterOcr
+
+        print("::warning::grading text with a vision model; results are not reproducible")
+        ocr = OpenRouterOcr()
 
     return ScoringStack(
         loader=PillowImageLoader(),
@@ -107,16 +120,20 @@ def main(argv: list[str] | None = None) -> int:
         if king is None:
             raise ChallengeAborted("there is no reigning king to challenge")
 
-        _, sealed = read_bundle(bundle)
+        _, challenger_sealed = read_bundle(bundle)
+
+        # The king and the baseline are the project's own code, so the project
+        # funds them. Their runs use a credential the maintainers sealed to the
+        # room, not the challenger's — a miner pays for their own attempt and
+        # nothing else.
         room = SealedRoomClient(
             os.environ["KATA_ROOM_URL"],
             os.environ["KATA_ROOM_AUTH_SECRET"],
             {
-                f"pr-{args.pr}": AgentSubmission(
-                    agent_id=f"pr-{args.pr}",
-                    bundle_b64=_pack(bundle),
-                    bundle_sha256=_digest(bundle),
-                    sealed_key=sealed,
+                f"pr-{args.pr}": _submission(f"pr-{args.pr}", bundle, challenger_sealed),
+                king.agent_id: _submission(king.agent_id, KING_DIR, _project_credential(KING_DIR)),
+                BASELINE_ID: _submission(
+                    BASELINE_ID, BASELINE_DIR, _project_credential(BASELINE_DIR)
                 ),
             },
         )
@@ -127,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             challenger_id=f"pr-{args.pr}",
             stack=build_scoring_stack(),
             image_dir=OUTPUT / "images",
+            baseline_id=BASELINE_ID,
             allowed_measurements={os.environ.get("IMAGENT_ROOM_MEASUREMENT", "")} - {""},
             match_log=Path("kings/matches.jsonl"),
         )
@@ -147,6 +165,39 @@ def main(argv: list[str] | None = None) -> int:
         outcome_path.write_text(json.dumps(outcome, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     return 0
+
+
+def _submission(agent_id: str, bundle: Path, sealed: str) -> AgentSubmission:
+    if not bundle.is_dir():
+        raise ChallengeAborted(f"bundle directory is missing: {bundle}")
+    return AgentSubmission(
+        agent_id=agent_id,
+        bundle_b64=_pack(bundle),
+        bundle_sha256=_digest(bundle),
+        sealed_key=sealed,
+    )
+
+
+def _project_credential(bundle: Path) -> str:
+    """The maintainers' sealed key for one project-owned bundle.
+
+    A credential is bound to the hash of every file in its bundle, so the king
+    and the baseline need separate ones — and crowning a new king invalidates the
+    king's, because the bundle it was bound to no longer exists. Re-sealing is
+    therefore part of crowning, not a one-time setup step.
+
+    This fails before the run starts rather than halfway through, so a missing
+    credential never costs a challenger their credit.
+    """
+    path = bundle / SEALED_FILENAME
+    if not path.is_file():
+        raise ChallengeAborted(
+            f"{path} is missing. Seal the project's provider key to the room:\n"
+            f"  python imagent_seal.py --room <url> --bundle {bundle} --measurement <id>\n"
+            "and commit the ciphertext. Crowning a new king invalidates the previous "
+            "king's credential, so this must be redone after every promotion."
+        )
+    return path.read_text(encoding="utf-8").strip()
 
 
 def _pack(bundle: Path) -> str:

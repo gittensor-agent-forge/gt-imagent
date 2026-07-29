@@ -115,6 +115,37 @@ def _agent_nonce(nonce: str, agent_id: str) -> str:
     return sha256(f"{nonce}:{agent_id}".encode("utf-8")).hexdigest()[:32]
 
 
+# dstack reports the measured identity of the running image as an event in the
+# attestation event log, not as a top-level field. `compose-hash` covers every
+# layer of the room image, which is exactly what an allowlist needs to pin.
+MEASUREMENT_EVENTS = ("compose-hash", "compose_hash")
+
+
+def measurement_from_event_log(event_log: Any) -> str:
+    """Pull the room image's measured identity out of the attestation event log.
+
+    Returns "" when it cannot be found, which `verify_run` treats as an abort.
+    Guessing here would defeat the allowlist: an unidentifiable room is exactly
+    the one you must not trust.
+    """
+    events = event_log
+    if isinstance(events, str):
+        try:
+            events = json.loads(events)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(events, list):
+        return ""
+
+    for entry in events:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("event", "")).strip().casefold() in MEASUREMENT_EVENTS:
+            value = entry.get("digest") or entry.get("event_payload") or ""
+            return str(value).strip()
+    return ""
+
+
 def _to_room_run(agent_id: str, answer: Any) -> RoomRun:
     if not isinstance(answer, dict):
         raise ChallengeAborted(f"room answer for {agent_id} was not an object")
@@ -150,5 +181,7 @@ def _to_room_run(agent_id: str, answer: Any) -> RoomRun:
         images=images,
         provenance=provenance,
         quote=quote,
-        measurement=str(answer.get("measurement", "")),
+        # Derived, not reported: the room has no reason to tell us which image it
+        # is, and we would have no reason to believe it if it did.
+        measurement=measurement_from_event_log(answer.get("event_log")),
     )

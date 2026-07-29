@@ -39,7 +39,8 @@ def _answer(**overrides) -> dict:
         "nonce": "n",
         "project_key": "c1",
         "quote": "0xquote",
-        "measurement": "sha256:approved-room",
+        # The room reports a signed event log, never a `measurement` field.
+        "event_log": [{"event": "compose-hash", "digest": "sha256:approved-room"}],
         "provenance": {"inference_policy": {"model_substitutions": 0}},
         "report": {
             "challenge_id": "c1",
@@ -180,3 +181,39 @@ def test_an_undecodable_image_aborts() -> None:
 def test_an_unregistered_agent_aborts_before_any_call() -> None:
     with pytest.raises(ChallengeAborted, match="no submission registered"):
         _client().run(challenge_id="c1", agent_id="ghost", nonce="n" * 32)
+
+
+# --- the measured room identity ---------------------------------------------
+
+
+def test_the_measurement_comes_from_the_attestation_event_log() -> None:
+    # The room never reports which image it is, and we would have no reason to
+    # believe it if it did. It is read out of the signed event log.
+    answer = _answer(
+        event_log=[
+            {"event": "app-id", "digest": "aaaa"},
+            {"event": "compose-hash", "digest": "sha256:approved-room"},
+        ]
+    )
+
+    run = _client(answer).run(challenge_id="c1", agent_id="chal-1", nonce="n" * 32)
+
+    assert run.measurement == "sha256:approved-room"
+
+
+def test_a_json_encoded_event_log_is_parsed() -> None:
+    answer = _answer(event_log=json.dumps([{"event": "compose-hash", "digest": "sha256:x"}]))
+
+    run = _client(answer).run(challenge_id="c1", agent_id="chal-1", nonce="n" * 32)
+
+    assert run.measurement == "sha256:x"
+
+
+def test_an_unidentifiable_room_yields_no_measurement() -> None:
+    # verify_run treats an empty measurement as an abort. Guessing would defeat
+    # the allowlist: an unidentifiable room is exactly the one not to trust.
+    from competition.room_client import measurement_from_event_log
+
+    assert measurement_from_event_log(None) == ""
+    assert measurement_from_event_log("not json") == ""
+    assert measurement_from_event_log([{"event": "app-id", "digest": "x"}]) == ""
